@@ -5,6 +5,8 @@
     "apps/*"
   ],
   "scripts": {
+    "dev:api": "npm run start:dev -w apps/api",
+    "test": "npm run test --workspaces --if-present",
     "lint": "eslint ."
   },
   "devDependencies": {
