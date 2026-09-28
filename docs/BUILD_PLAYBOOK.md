@@ -199,7 +199,12 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - Error body shape: { statusCode, code, message }. Codes listed in PRD §11.
 
 ## Git rules
-- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release). Never commit to master or release/*, never merge, never push, never rewrite history.
+- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release) or a feature/* or fix/* branch you created. Never commit to master or release/*.
+- You MAY create feature/* and fix/* branches from an up-to-date master
+  (git checkout master && git pull && git checkout -b <name>).
+- You MAY push feature/* and fix/* branches and open the PR with gh pr create.
+- NEVER merge, never push to master, pre-release or release/*, never force-push, never rewrite pushed history.
+- I review and merge every PR myself on GitHub (merge commit, never squash).
 - Commit format: <type>(<scope>): <short description>. Types: feat, fix, refactor, test, docs, chore, build.
 - One logical change per commit. 3–6 commits per step. No vague messages (update, changes, fix, final, wip).
 - Never commit .env or any secret. Only .env.example with placeholder values.
