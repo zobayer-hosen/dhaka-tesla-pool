@@ -138,6 +138,8 @@ export class RidesService {
               RequestStatus.MATCHED,
             );
           }
+          // 2+ bookings now share the car: everyone gets the pooled fare.
+          await this.pooling.recalculateFares(manager, pool.id, id);
         }
         return id;
       });

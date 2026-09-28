@@ -4,6 +4,14 @@ import { Pool } from '../database/entities/pool.entity';
 import { RideEvent } from '../database/entities/ride-event.entity';
 import { RideRequest } from '../database/entities/ride-request.entity';
 import { EventType, PoolStatus, RequestStatus, Zone } from '../database/enums';
+import { FareService } from '../fare/fare.service';
+
+// FARE_CHANGED notes. The owner sees them in their timeline, so they never name
+// another passenger (PRD §9).
+const NOTE_JOINED_SHARED_RIDE = 'Joined a shared ride, pool discount applied';
+const NOTE_ANOTHER_PASSENGER_JOINED =
+  'Another passenger joined, pool discount applied';
+const NOTE_NOW_RIDING_ALONE = 'Now riding alone, pool discount removed';
 
 // Everything that changes who sits in a pool. It lives in RidesModule and is
 // exported, so auto-join (rides) and driver accept (driver) share ONE
@@ -11,13 +19,15 @@ import { EventType, PoolStatus, RequestStatus, Zone } from '../database/enums';
 // transaction: it takes the caller's EntityManager.
 @Injectable()
 export class PoolingService {
+  constructor(private readonly fares: FareService) {}
+
   // Takes `seats` seats in the pool if they are still free. Returns true if they
   // were claimed, false if not.
   //
   // Why one UPDATE and not "load the pool → seatsTaken += seats → save()": with
   // load-then-save, Nusrat and Shirin can both read "2 of 3 taken" before either
-  // writes, and both write 3, so two people get one seat. Here the check and the
-  // change are one statement. Postgres locks the row for the first UPDATE, makes
+  // writes; both then write 3, and 4 people are booked into a 3-seat car while
+  // the row says 3. Here the check and the change are one statement. Postgres locks the row for the first UPDATE, makes
   // the second one wait until the first transaction commits, then re-checks the
   // WHERE against the new seats_taken: 3 + 1 > 3, so 0 rows change.
   //
@@ -103,5 +113,56 @@ export class PoolingService {
       poolId,
       status: Not(RequestStatus.CANCELLED),
     });
+  }
+
+  // Sets every booking's fare to match the pool: pooled while 2+ bookings share
+  // it, solo otherwise (bookings, not seats: PRD §7). Only called while the pool
+  // is MATCHED and locked by the caller's transaction, so nothing else can change
+  // these fares meanwhile; from STARTED on, fares are locked. Each change gets a
+  // FARE_CHANGED event. joinedRideId is the booking that just joined, if any.
+  async recalculateFares(
+    manager: EntityManager,
+    poolId: string,
+    joinedRideId: string | null,
+  ): Promise<void> {
+    const bookings = await manager.findBy(RideRequest, {
+      poolId,
+      status: RequestStatus.MATCHED,
+    });
+    const pooled = bookings.length >= 2;
+
+    for (const booking of bookings) {
+      const fare = this.fares.calculateFare({
+        distanceM: booking.distanceM,
+        seats: booking.seats,
+        pooled,
+      });
+      if (fare.farePaisa === booking.farePaisa) {
+        continue;
+      }
+
+      await manager.update(
+        RideRequest,
+        { id: booking.id, status: RequestStatus.MATCHED },
+        fare,
+      );
+
+      let note = NOTE_NOW_RIDING_ALONE;
+      if (pooled) {
+        note =
+          booking.id === joinedRideId
+            ? NOTE_JOINED_SHARED_RIDE
+            : NOTE_ANOTHER_PASSENGER_JOINED;
+      }
+      await manager.insert(RideEvent, {
+        rideRequestId: booking.id,
+        poolId,
+        actorId: null, // the system did it
+        type: EventType.FARE_CHANGED,
+        oldFarePaisa: booking.farePaisa,
+        newFarePaisa: fare.farePaisa,
+        note,
+      });
+    }
   }
 }
