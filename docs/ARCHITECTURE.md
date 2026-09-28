@@ -12,7 +12,7 @@ This file has five diagrams. Together they answer: *how the parts connect, what 
 
 ## 1. System architecture
 
-Three boxes, one direction. The browser only talks to Next.js, Next.js only talks to the API, and only the API talks to the database.
+Three boxes, one direction. The browser loads pages from Next.js; code running in the browser calls the API with the login token; only the API talks to the database.
 
 ```mermaid
 flowchart LR
@@ -25,25 +25,28 @@ flowchart LR
     D[("PostgreSQL<br/>(db, port 5432)<br/><br/>5 tables")]
   end
 
-  B -- "opens pages" --> W
-  W -- "REST calls (JSON)<br/>+ login token (JWT)" --> A
+  B -- "loads pages" --> W
+  B -- "fetch + JWT<br/>(CORS-allowed origin)" --> A
+  W -.->|"tells the pages where the API is<br/>(NEXT_PUBLIC_API_URL)"| A
   A -- "SQL via TypeORM" --> D
 ```
+
+**Why CORS is limited to `WEB_ORIGIN`:** the API is called straight from the browser, so it accepts browser calls only from pages served by our web app.
 
 **What each part does**
 
 | Part | Job | Example |
 |---|---|---|
-| **Browser** | What people see and click | Nusrat taps "Request ride" |
-| **Next.js** | Shows pages, calls the API | Shows Nusrat's fare and status |
+| **Browser** | What people see and click; runs the page code that calls the API | Nusrat taps "Request ride" → `POST /rides` |
+| **Next.js** | Serves the pages (the code that runs in the browser) | The "My ride" page that shows Nusrat's fare and status |
 | **NestJS API** | Checks who you are, applies all rules | "Is there a free seat? Is this your ride?" |
 | **PostgreSQL** | Stores everything safely | Bullet's seats, every ride, every status or fare change |
 
 **Inside the API: four modules**
 
 - **Auth** — sign up, log in, gives a JWT token. Passwords are hashed with bcrypt.
-- **Rides** — passenger requests a ride, sees their own rides, cancels.
-- **Driver** — Jashim goes online/offline, accepts a request, marks arrived → started → completed.
+- **Rides** — passenger requests a ride, sees their own rides, cancels. It also holds **PoolingService** (matching, `claimSeat`, `releaseSeats`) and exports it, because DriverModule uses it too.
+- **Driver** — Jashim goes online/offline, accepts a request, marks arrived → started → completed. It owns the `/driver/*` routes **and** the `/pools/:id/*` routes (arrive, start, complete). Accept uses PoolingService from RidesModule, so there is only one seat-claiming path.
 - **Fare** — calculates each passenger's fare. Pure math, no database, easy to test.
 
 Every request passes the same checks first: **Is the input valid?** (validation) → **Who is this?** (JWT) → **Are they allowed?** (passenger vs driver, and "is this your own ride?").
@@ -63,6 +66,7 @@ Every request passes the same checks first: **Is the input valid?** (validation)
 - `synchronize: false` always. The schema changes **only through migrations** (`migration:generate` → review → `migration:run`), so the database the evaluator gets is exactly what's in git.
 - CHECK constraints are declared on entities with `@Check(...)` so they end up in the migration.
 - Seat claiming uses a QueryBuilder `UPDATE` (see §5), never "load entity → change number → `save()`", because that read-then-write is exactly the race we're trying to avoid.
+- Status changes follow the same idea: a conditional `UPDATE … WHERE status = :expected`, and any transaction that touches a pool locks the pool row first (see §5, "Other status changes").
 
 **When we'd switch:** if the query layer gets complex enough that type-safety of query results matters more than NestJS integration, Prisma or Drizzle would be worth it.
 
@@ -215,7 +219,7 @@ Nusrat (Banani → Mohakhali) and Rafiq (Banani → Gulshan 1) both start at Ban
 
 ```
 fare = (base fare + (distance km × per-km rate) − pool discount) × seats
-base fare = 40 taka · per km = 20 taka · pool discount = 25% of distance charge (only if pool has 2+ passengers)
+base fare = 40 taka · per km = 20 taka · pool discount = 25% of distance charge (only if pool has 2+ bookings, not seats)
 ```
 
 | | Nusrat (Banani → Mohakhali, 3 km) | Rafiq (Banani → Gulshan 1, 4 km) |
@@ -229,7 +233,7 @@ base fare = 40 taka · per km = 20 taka · pool discount = 25% of distance charg
 
 ## 5. The last-seat problem (Nusrat vs Shirin)
 
-Bullet has **1 seat left**. Nusrat and Shirin both request a ride from Banani at the same moment, and both are auto-matched to Bullet's pool.
+Bullet has **1 seat left**. Nusrat and Shirin both request a ride from Banani at the same moment, and both try to auto-join Bullet's pool.
 
 **The trap:** if the code first *reads* "1 seat free" and then *writes* "+1", both requests can read before either writes → 4 people in a 3-seat car.
 
@@ -245,6 +249,14 @@ WHERE id = :poolId
 -- 0 rows changed → pool is full
 ```
 
+**Losing the race is not an error.** An `UPDATE` that changes 0 rows is a normal answer, not a SQL error, so the transaction doesn't have to roll back. Each `POST /rides` is **one transaction**:
+
+1. Insert the request as `REQUESTED` plus its first `ride_events` row. The request is saved **first**, so it can never be lost.
+2. Find the oldest open pool with the same pickup zone and call `claimSeat`.
+3. `claimSeat` returns `true` → the request becomes `MATCHED` (with `pool_id` and an event row). It returns `false`, or no pool fits → nothing else changes: the request stays `REQUESTED` and Jashim can still accept it.
+
+Either way the API answers **`201 Created`**, and the response's `status` says `MATCHED` or `REQUESTED`. Only a **driver accept** turns `false` into `409 POOL_FULL`, because there Jashim asked for that exact seat.
+
 ```mermaid
 sequenceDiagram
   participant N as Nusrat
@@ -255,18 +267,22 @@ sequenceDiagram
   Note over DB: Bullet: 2 of 3 seats taken
   N->>API: POST /rides (Banani, 1 seat)
   S->>API: POST /rides (Banani, 1 seat, same moment)
+  Note over API,DB: Each request is one transaction: insert as REQUESTED, then claimSeat
   API->>DB: UPDATE for Nusrat
-  API->>DB: UPDATE for Shirin (waits for Nusrat's to finish)
-  DB-->>API: Nusrat: 1 row changed (3 of 3)
-  DB-->>API: Shirin: 0 rows changed
-  API-->>N: ✅ You're in
-  API-->>S: ❌ Pool is full, still looking
+  API->>DB: UPDATE for Shirin, waits until Nusrat's transaction commits (the row lock is held until commit)
+  DB-->>API: Nusrat: 1 row changed (3 of 3), claimSeat = true
+  DB-->>API: Shirin: 0 rows changed, claimSeat = false
+  API-->>N: ✅ 201, status MATCHED
+  API-->>S: ⏳ 201, status REQUESTED (saved, still looking)
 ```
 
-**The same thing in TypeORM** (inside one transaction, together with the status change and the history row):
+**The same thing in TypeORM.** `claimSeat` runs inside the caller's transaction, together with the status change and the history row:
 
 ```ts
-await this.dataSource.transaction(async (manager) => {
+// PoolingService. Returns true if the seats were claimed. It never throws:
+// "0 rows changed" just means "no seat", and throwing would roll back the
+// caller's transaction, losing the passenger's brand-new request with it.
+async claimSeat(manager: EntityManager, poolId: string, seats: number): Promise<boolean> {
   const result = await manager
     .createQueryBuilder()
     .update(Pool)
@@ -277,21 +293,60 @@ await this.dataSource.transaction(async (manager) => {
     .setParameters({ seats })
     .execute();
 
-  if (result.affected === 0) {
-    throw new ConflictException({ code: 'POOL_FULL', message: 'This ride just filled up' });
-  }
+  return result.affected === 1;
+}
 
-  // same transaction: ride_request → MATCHED, then insert a ride_events row
-});
+// POST /rides: the request is already saved as REQUESTED in this transaction.
+if (pool && (await this.poolingService.claimSeat(manager, pool.id, ride.seats))) {
+  // same transaction: ride_request → MATCHED, ride_events row, fares recalculated
+}
+// otherwise the request simply stays REQUESTED; the API still answers 201
+
+// Driver accept: here "no seat" IS an error, because Jashim asked for this seat.
+if (!(await this.poolingService.claimSeat(manager, pool.id, ride.seats))) {
+  throw new ConflictException({ code: 'POOL_FULL', message: 'This ride just filled up' });
+}
 ```
 
-If anything inside the transaction fails, **everything** is rolled back: no seat taken, no status change, no history row.
+If anything inside the transaction **throws** (a real database error, or `POOL_FULL` in driver accept), **everything** is rolled back: no seat taken, no status change, no history row. That is exactly why `claimSeat` returns `false` instead of throwing.
 
 **Safety net:** the `CHECK (seats_taken BETWEEN 0 AND capacity)` constraint (declared with `@Check` on the `Pool` entity) blocks it at the database level too.
 
-**Tested by:** sending both requests at the same time with `Promise.all`, then checking exactly one succeeded and `seats_taken` is 3.
+**Tested by (T6):** sending both requests at the same time with `Promise.all`, then checking that both got `201`, exactly one is `MATCHED`, the other is `REQUESTED` (saved, not lost), and `seats_taken` is 3.
 
 **At larger scale:** this still works, because at most 3 people ever compete for one pool. The bigger challenge would be matching thousands of requests across the city, which we'd split by zone and handle in order.
+
+### Other status changes
+
+Seats aren't the only race. Rafiq can tap **Cancel** at the same moment Jashim taps **Arrived**. Two rules make every status change safe.
+
+**1. Every status change is a conditional update.** The row changes only if it is still in the status we checked:
+
+```sql
+UPDATE ride_requests SET status = :next
+WHERE id = :id AND status = :expected;
+-- 1 row changed → done · 0 rows changed → someone else changed it first
+```
+
+0 rows → `409 INVALID_TRANSITION` (for driver accept: `409 REQUEST_UNAVAILABLE`). The state machine (§3) decides whether a move is allowed at all; `AND status = :expected` makes sure the row hasn't moved on since we read it. Pools work the same way. When a pool moves forward, its passengers move in one statement, `... WHERE pool_id = :poolId AND status = :expected`, so cancelled passengers are skipped automatically.
+
+**2. Lock order: the pool first, then its ride requests.** Any transaction that touches a pool first locks the pool row, then updates that pool's `ride_requests`:
+
+```sql
+SELECT id FROM pools WHERE id = :poolId FOR UPDATE;  -- TypeORM: .setLock('pessimistic_write')
+```
+
+- Rafiq cancels: **lock pool → conditional update of his request → release his seats** (and cancel the pool if he was the last passenger).
+- Jashim taps "Arrived": **lock pool → conditional update of the pool → update its requests**.
+
+Why the order matters: if cancel locked Rafiq's request first while "Arrived" locked the pool first, each would wait for the other forever (a **deadlock**; Postgres would abort one of them with an error). With the same order everywhere, the second one simply waits for the first to commit, and its conditional update then sees the new status:
+
+| Who commits first | Result |
+|---|---|
+| Rafiq's cancel | His seats are freed; "Arrived" then moves only the remaining passengers |
+| Jashim's "Arrived" | Rafiq's conditional update changes 0 rows → `409 INVALID_TRANSITION` (too late to cancel, PRD A7) |
+
+The seat-claim `UPDATE` above locks the pool row too, so auto-join and driver accept follow the same order: the pool is locked before any of its ride requests change.
 
 ---
 

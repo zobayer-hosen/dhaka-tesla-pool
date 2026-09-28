@@ -13,7 +13,7 @@ This playbook takes the project from an empty folder to `release/v1.0.0`. The wo
 4. Work across **real days**. Never fake commit dates; the evaluator reads the timeline.
 
 **Repo:** `dhaka-tesla-pool` · **Stack:** Next.js · NestJS · PostgreSQL · TypeORM · Docker Compose
-**Design docs (source of truth):** [`docs/PRD.md`](./PRD.md) · [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) · [`docs/ERD.md`](./ERD.md) ([ERD.png](./ERD.png))
+**Design docs (source of truth):** [`docs/PRD.md`](./PRD.md) · [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) · [`docs/ERD.md`](./ERD.md) ([ERD.png](./ERD.png)) · [`docs/DECISIONS.md`](./DECISIONS.md)
 
 ---
 
@@ -173,14 +173,15 @@ Create **`CLAUDE.md`** in the repo root (Cursor: also copy it to `.cursorrules`;
 # Project rules for AI assistants — Dhaka Tesla Pool
 
 ## Source of truth
-Read docs/PRD.md, docs/ARCHITECTURE.md and docs/ERD.md before any work.
-If you must deviate from them, STOP and ask me. If I approve, update the doc in the same branch.
+Read docs/PRD.md, docs/ARCHITECTURE.md, docs/ERD.md and docs/DECISIONS.md before any work.
+If you must deviate from them, STOP and ask me. If I approve, update the doc and add the decision to docs/DECISIONS.md in the same branch.
 
 ## Stack (fixed — do not add or swap)
 - Monorepo with npm workspaces: apps/api (NestJS), apps/web (Next.js App Router, TypeScript, Tailwind)
 - PostgreSQL 16, TypeORM with migrations. `synchronize: false` ALWAYS.
 - Auth: @nestjs/jwt + passport-jwt, bcrypt. Validation: class-validator + global ValidationPipe.
 - Tests: Jest + supertest (api). e2e tests run against a real Postgres test database.
+- TypeScript only: all code, tests, scripts and config files are .ts/.tsx. No .js/.mjs/.cjs files. If a tool can't load a TypeScript config, STOP and ask me.
 - NOT allowed: Prisma, Redis, queues, Kafka, WebSockets, microservices, GraphQL, extra UI kits.
 
 ## Domain rules (never break)
@@ -188,13 +189,23 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc in 
 - Money = integer paisa. Never float, never decimal for arithmetic.
 - Seat claiming = ONE conditional SQL UPDATE (`... WHERE seats_taken + :seats <= capacity`) inside a transaction.
   NEVER load a pool, change seatsTaken in JS and save() it.
+- claimSeat returns a boolean and never throws; only driver accept turns false into 409 POOL_FULL.
+- Every status change = ONE conditional UPDATE (`... SET status = :next WHERE id = :id AND status = :expected`).
+  0 rows → 409 INVALID_TRANSITION (REQUEST_UNAVAILABLE for driver accept). NEVER load a ride or pool, change its status in JS and save() it.
+- Lock order: a transaction that touches a pool locks the pool row FIRST (`SELECT ... FROM pools WHERE id = :id FOR UPDATE`),
+  then updates its ride_requests. Same order everywhere, so cancel vs driver "Arrived" can't deadlock.
 - Every status or fare change writes a ride_events row in the SAME transaction.
 - Passengers see only their own rides: return 404 for other people's rides. Wrong role returns 403.
 - ride_events notes never name another passenger ("Another passenger joined", not "Rafiq joined").
 - Error body shape: { statusCode, code, message }. Codes listed in PRD §11.
 
 ## Git rules
-- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release). Never commit to master or release/*, never merge, never push, never rewrite history.
+- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release) or a feature/* or fix/* branch you created. Never commit to master or release/*.
+- You MAY create feature/* and fix/* branches from an up-to-date master
+  (git checkout master && git pull && git checkout -b <name>).
+- You MAY push feature/* and fix/* branches and open the PR with gh pr create.
+- NEVER merge, never push to master, pre-release or release/*, never force-push, never rewrite pushed history.
+- I review and merge every PR myself on GitHub (merge commit, never squash).
 - Commit format: <type>(<scope>): <short description>. Types: feat, fix, refactor, test, docs, chore, build.
 - One logical change per commit. 3–6 commits per step. No vague messages (update, changes, fix, final, wip).
 - Never commit .env or any secret. Only .env.example with placeholder values.
@@ -307,6 +318,9 @@ types, enums, CHECK constraints, partial unique indexes and ON DELETE RESTRICT e
    Use @Check and @Index({ unique: true, where: ... }) for the constraints in ERD §3–4.
 3. Generate ONE initial migration. Open it and make sure every CHECK and partial
    unique index from ERD §4 and §6 is present; add missing ones by hand.
+   UUID primary keys must default to gen_random_uuid() (built into Postgres 13+).
+   Don't enable the uuid-ossp extension; check the generated migration and fix it
+   by hand if needed.
 4. Seed script (idempotent — safe to run twice): Jashim (DRIVER) with Bullet
    (capacity 3, plate "DHAKA-BA-11-0841" (must fit varchar(20))), Nusrat, Rafiq, Shirin (PASSENGER).
    Emails and password exactly as PRD §14. Hash passwords with bcrypt.
@@ -429,7 +443,13 @@ Read CLAUDE.md, PRD §4, §5.1 (P2–P6), §6, §7, §9, §11 and ARCHITECTURE �
      (rely on the partial unique index, map the DB error).
    - GET /rides (history, newest first), GET /rides/current,
      GET /rides/:id (owner only, includes its ride_events timeline)
+   - GET /rides/current and GET /rides/:id return coRiderCount: the number of OTHER
+     active bookings in the same pool (0 while not in a pool). A number only, never
+     names or fares (PRD §5.1 P4).
    - POST /rides/:id/cancel → only owner; only REQUESTED or MATCHED; writes event.
+     Change the status with ONE conditional UPDATE (WHERE id = :id AND status = :expected),
+     never load → change → save(); 0 rows → 409 INVALID_TRANSITION (ARCHITECTURE §5
+     "Other status changes").
      (Freeing pool seats comes in the pooling step — leave a clear TODO in one place.)
    - Any ride that isn't yours → 404.
 5. e2e tests:
@@ -471,32 +491,51 @@ git checkout master && git pull && git checkout -b feature/tesla-pooling
 ### Prompt
 
 ```text
-Read CLAUDE.md, PRD §4 (A2), §7, §8 and ARCHITECTURE §4–5 carefully.
+Read CLAUDE.md, PRD §4 (A2), §7, §8 and ARCHITECTURE §1 and §4–5 carefully
+(including §5 "Other status changes").
 
-1. PoolingService.claimSeat(manager, poolId, seats): exactly the QueryBuilder UPDATE
-   from ARCHITECTURE §5 (status = MATCHED AND seats_taken + :seats <= capacity).
-   affected === 0 → throw 409 POOL_FULL. Add a comment explaining why this is not
-   load → modify → save.
-2. PoolingService.releaseSeats(manager, poolId, seats) for cancellation; if the pool
-   has no passengers left, set it CANCELLED.
+PoolingService lives in RidesModule and is exported, because DriverModule uses it in
+the next step (ARCHITECTURE §1).
+
+1. PoolingService.claimSeat(manager, poolId, seats): Promise<boolean>. Exactly the
+   QueryBuilder UPDATE from ARCHITECTURE §5 (status = MATCHED AND seats_taken + :seats
+   <= capacity). Return affected === 1. It NEVER throws: 0 rows is a normal answer, and
+   throwing would roll back the caller's transaction. Add a comment explaining why this
+   is not load → modify → save.
+2. PoolingService.releaseSeats(manager, poolId, seats) for cancellation. The caller has
+   already locked the pool row (lock order, ARCHITECTURE §5). If the pool has no active
+   bookings left, set it CANCELLED with a conditional update (WHERE status = 'MATCHED')
+   and put "pool cancelled: last passenger left" in the note of that passenger's own
+   CANCELLED event (ERD §3).
 3. Matching rule (A2): same pickup zone, pool status MATCHED, enough free seats.
-   On POST /rides: inside ONE transaction, find the oldest compatible pool and try
-   claimSeat. Success → request MATCHED with pool_id. POOL_FULL or no pool → stay REQUESTED.
-4. Fares: when a pool reaches 2+ passengers, recalculate every member's fare as pooled;
-   when it drops to 1, recalculate as solo. Write FARE_CHANGED events (old → new, note).
-   Fares change only while the pool is MATCHED.
-5. Wire releaseSeats into cancel (remove the TODO from the previous step).
+   On POST /rides, ONE transaction: insert the request as REQUESTED + its first event
+   (as in Step 4), then find the oldest compatible pool and call claimSeat.
+   true → conditional update to MATCHED with pool_id + event → 201, status MATCHED.
+   false or no pool → the request stays REQUESTED → 201, status REQUESTED. Never 409 here.
+4. Fares: when a pool reaches 2+ active bookings (ride requests, NOT seats: Rafiq alone
+   with 2 seats is still solo), recalculate every member's fare as pooled; when it drops
+   to 1 booking, recalculate as solo. Write FARE_CHANGED events (old → new, note).
+   Fares change only while the pool is MATCHED. coRiderCount (from Step 4) counts the
+   same thing: the OTHER active bookings in the pool.
+5. Wire releaseSeats into cancel (remove the TODO from the previous step), in lock order:
+   lock the pool (SELECT ... FOR UPDATE) → conditional update of the request → releaseSeats.
 6. Tests (e2e, real Postgres). Create a pool for Bullet directly in the test setup
    (the driver accept endpoint comes next step):
    - T1: Bullet 3 seats. Nusrat and Rafiq join → 2/3. Shirin asks for 2 seats → stays
      REQUESTED, seats_taken still 2. Shirin cancels and rebooks with 1 seat → 3/3. Calling claimSeat
-     once more → POOL_FULL, seats_taken still 3. (Use only the story cast.)
-   - T6: pool at 2/3 (Rafiq holding 2 seats). Nusrat and Shirin claim the last seat with
-     Promise.all → exactly one MATCHED, one REQUESTED, seats_taken = 3. Repeat 20 times.
+     once more → returns false, seats_taken still 3. (Use only the story cast.)
+   - T6: pool at 2/3 (Rafiq holding 2 seats). Nusrat and Shirin POST /rides for the last
+     seat with Promise.all → both get 201; exactly one MATCHED, the other REQUESTED (her
+     request is saved, not lost); seats_taken = 3. Repeat 20 times.
    - Fares: Nusrat 10000 → 8500 when Rafiq joins; back to 10000 if Rafiq cancels.
+     Rafiq alone with 2 seats pays the solo fare: 24000.
+   - coRiderCount: Nusrat sees 1 after Rafiq joins, even when Rafiq holds 2 seats; her
+     response never contains Rafiq's name or fare.
    - Privacy: Nusrat's GET /rides/:id timeline shows the FARE_CHANGED event but never
      contains "Rafiq" (note says "Another passenger joined").
-   - Cancel frees seats: 2/3 → Rafiq cancels → 1/3.
+   - Cancel frees seats: 2/3 → Rafiq cancels → 1/3. Nusrat (now the last passenger)
+     cancels → pool CANCELLED, and her CANCELLED event note says
+     "pool cancelled: last passenger left".
 
 Commits:
 - feat(pool): claim seats with a single conditional update
@@ -533,22 +572,29 @@ git checkout master && git pull && git checkout -b feature/driver-flow
 ### Prompt
 
 ```text
-Read CLAUDE.md, PRD §5.2 (D1–D5), §6 and §11.
+Read CLAUDE.md, PRD §5.2 (D1–D5), §6 and §11, and ARCHITECTURE §1 and §5.
 
 DriverModule (DRIVER role only):
 1. PATCH /driver/status { online } → 409 ACTIVE_RIDE_EXISTS when going offline with an active pool.
 2. GET /driver/requests → REQUESTED rides, oldest first, ONLY those Jashim can accept
    (PRD §5.2 D2): no active pool → fits capacity; MATCHED pool → same pickup zone and
    fits free seats; pool past MATCHED → empty. Passenger FIRST NAME only. Offline → empty.
-3. POST /driver/requests/:id/accept, one transaction:
-   - no active pool → create pool (capacity copied from vehicle, status MATCHED), claimSeat
-   - active MATCHED pool in the same pickup zone → claimSeat into it
-   - errors (PRD §11): REQUEST_UNAVAILABLE, POOL_FULL, POOL_NOT_JOINABLE, DRIVER_OFFLINE.
-   Reuse PoolingService — do NOT write a second seat-claiming path.
+3. POST /driver/requests/:id/accept, one transaction, pool first (lock order):
+   - no active pool → create pool (capacity copied from vehicle, status MATCHED)
+   - active MATCHED pool in the same pickup zone → lock it (SELECT ... FOR UPDATE)
+   - then a conditional update of the request (WHERE status = 'REQUESTED');
+     0 rows → 409 REQUEST_UNAVAILABLE
+   - then claimSeat; false → 409 POOL_FULL. This is the only place where false becomes
+     an error; throwing rolls back the request update too.
+   - other errors (PRD §11): POOL_NOT_JOINABLE, DRIVER_OFFLINE.
+   Reuse PoolingService from RidesModule — do NOT write a second seat-claiming path.
 4. GET /driver/pool → current pool, passengers (first name, drop-off, seats, fare), seats x/3.
-5. POST /pools/:id/arrive | /start | /complete — only the pool's driver; use the state
-   machine; move the pool AND all its non-cancelled requests together; set arrived_at /
-   started_at / completed_at; one ride_events row per passenger per step.
+5. POST /pools/:id/arrive | /start | /complete (these routes belong to DriverModule) —
+   only the pool's driver; use the state machine; lock the pool (SELECT ... FOR UPDATE),
+   then conditional updates: the pool WHERE status = :expected (0 rows → 409
+   INVALID_TRANSITION), then its requests WHERE pool_id = :poolId AND status = :expected
+   (this skips cancelled ones); set arrived_at / started_at / completed_at; one
+   ride_events row per passenger per step.
    Start locks fares (no more recalculation).
 6. GET /driver/history → completed pools with passengers and total fare.
 7. e2e tests:
@@ -558,6 +604,9 @@ DriverModule (DRIVER role only):
    - Nusrat calling /pools/:id/start → 403; Jashim calling start on a pool id that
      isn't his (random uuid) → 404. (Only one driver is seeded, by design.)
    - cancel after arrive → 409 (T5)
+   - Rafiq cancels while Jashim taps Arrived (Promise.all) → no deadlock: either the
+     cancel wins (Rafiq CANCELLED, the others DRIVER_ARRIVED) or arrive wins (cancel →
+     409 INVALID_TRANSITION). Repeat 20 times.
    - offline driver can't accept → 409 DRIVER_OFFLINE; accepting an already-matched request → 409 REQUEST_UNAVAILABLE
 
 Commits:
@@ -764,7 +813,8 @@ brief §12: summary, problem statement, features implemented, screenshots (leave
 environment variables (from .env.example), local setup, Docker instructions,
 migration/seed instructions, how to run web/api/tests, demo credentials (PRD §14),
 deployment URL (placeholder), API overview (PRD §11), matching rule, fare model with
-the Nusrat/Rafiq table, money storage, concurrency handling, key decisions and trade-offs,
+the Nusrat/Rafiq table, money storage, concurrency handling, key decisions and trade-offs
+(from docs/DECISIONS.md),
 known limitations, next improvements, AI Usage (placeholder — I will write it myself),
 demo video link (placeholder).
 
@@ -846,7 +896,7 @@ git push -u origin release/v1.0.0 --tags
 | Time | Show | Say (in your own words, not the PRD) |
 |---|---|---|
 | 0:00–1:00 | Title / story | The problem: strangers sharing Bullet, fair fares, privacy, the last seat |
-| 1:00–3:00 | ARCHITECTURE.md, ERD.md | Browser → Next.js → NestJS → Postgres · 5 tables · lifecycle · **key decision:** atomic seat UPDATE + CHECK · **trade-off:** polling instead of WebSockets |
+| 1:00–3:00 | ARCHITECTURE.md, ERD.md | Browser loads pages from Next.js and calls NestJS directly (JWT, CORS) → Postgres · 5 tables · lifecycle · **key decision:** atomic seat UPDATE + CHECK · **trade-off:** polling instead of WebSockets |
 | 3:00–6:00 | App in 3 windows | Nusrat → Jashim accepts → Rafiq auto-joins, fare 100 → 85 → **edge case:** Shirin wants 2 seats, only 1 left → arrive/start/complete → history → deployed URL |
 
 ---

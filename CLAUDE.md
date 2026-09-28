@@ -1,14 +1,15 @@
 # Project rules for AI assistants — Dhaka Tesla Pool
 
 ## Source of truth
-Read docs/PRD.md, docs/ARCHITECTURE.md and docs/ERD.md before any work.
-If you must deviate from them, STOP and ask me. If I approve, update the doc in the same branch.
+Read docs/PRD.md, docs/ARCHITECTURE.md, docs/ERD.md and docs/DECISIONS.md before any work.
+If you must deviate from them, STOP and ask me. If I approve, update the doc and add the decision to docs/DECISIONS.md in the same branch.
 
 ## Stack (fixed — do not add or swap)
 - Monorepo with npm workspaces: apps/api (NestJS), apps/web (Next.js App Router, TypeScript, Tailwind)
 - PostgreSQL 16, TypeORM with migrations. `synchronize: false` ALWAYS.
 - Auth: @nestjs/jwt + passport-jwt, bcrypt. Validation: class-validator + global ValidationPipe.
 - Tests: Jest + supertest (api). e2e tests run against a real Postgres test database.
+- TypeScript only: all code, tests, scripts and config files are .ts/.tsx. No .js/.mjs/.cjs files. If a tool can't load a TypeScript config, STOP and ask me.
 - NOT allowed: Prisma, Redis, queues, Kafka, WebSockets, microservices, GraphQL, extra UI kits.
 
 ## Domain rules (never break)
@@ -16,13 +17,23 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc in 
 - Money = integer paisa. Never float, never decimal for arithmetic.
 - Seat claiming = ONE conditional SQL UPDATE (`... WHERE seats_taken + :seats <= capacity`) inside a transaction.
   NEVER load a pool, change seatsTaken in JS and save() it.
+- claimSeat returns a boolean and never throws; only driver accept turns false into 409 POOL_FULL.
+- Every status change = ONE conditional UPDATE (`... SET status = :next WHERE id = :id AND status = :expected`).
+  0 rows → 409 INVALID_TRANSITION (REQUEST_UNAVAILABLE for driver accept). NEVER load a ride or pool, change its status in JS and save() it.
+- Lock order: a transaction that touches a pool locks the pool row FIRST (`SELECT ... FROM pools WHERE id = :id FOR UPDATE`),
+  then updates its ride_requests. Same order everywhere, so cancel vs driver "Arrived" can't deadlock.
 - Every status or fare change writes a ride_events row in the SAME transaction.
 - Passengers see only their own rides: return 404 for other people's rides. Wrong role returns 403.
 - ride_events notes never name another passenger ("Another passenger joined", not "Rafiq joined").
 - Error body shape: { statusCode, code, message }. Codes listed in PRD §11.
 
 ## Git rules
-- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release). Never commit to master or release/*, never merge, never push, never rewrite history.
+- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release) or a feature/* or fix/* branch you created. Never commit to master or release/*.
+- You MAY create feature/* and fix/* branches from an up-to-date master
+  (git checkout master && git pull && git checkout -b <name>).
+- You MAY push feature/* and fix/* branches and open the PR with gh pr create.
+- NEVER merge, never push to master, pre-release or release/*, never force-push, never rewrite pushed history.
+- I review and merge every PR myself on GitHub (merge commit, never squash).
 - Commit format: <type>(<scope>): <short description>. Types: feat, fix, refactor, test, docs, chore, build.
 - One logical change per commit. 3–6 commits per step. No vague messages (update, changes, fix, final, wip).
 - Never commit .env or any secret. Only .env.example with placeholder values.

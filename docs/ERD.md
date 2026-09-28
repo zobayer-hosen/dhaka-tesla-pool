@@ -2,7 +2,7 @@
 
 **Database:** PostgreSQL 16 · **ORM:** TypeORM (entities + migrations, `synchronize: false`)
 
-Five tables, three enums. Every rule that protects data (capacity, seats, one active ride, fare math) is enforced **by the database itself**, not only by the code.
+Five tables, five enums. Every rule that protects data (capacity, seats, one active ride, fare math) is enforced **by the database itself**, not only by the code.
 
 ---
 
@@ -199,6 +199,8 @@ CHECK (status IN ('REQUESTED','CANCELLED') OR pool_id IS NOT NULL)
 
 Rows are only ever **inserted**, never updated or deleted. They are written in the **same transaction** as the change they describe.
 
+**When the last passenger cancels, the pool is cancelled too.** Events belong to a ride request, and there is no separate pool history table, so the pool's end is recorded in the **note of that passenger's own `CANCELLED` event**: `"pool cancelled: last passenger left"`. No schema change is needed, and the note names nobody else.
+
 ---
 
 ## 4. Indexes
@@ -256,7 +258,7 @@ Check: Nusrat `(4000 + 6000 − 1500) × 1 = 8500` ✓ · Rafiq and Shirin `(400
 | 12 | STATUS_CHANGED | MATCHED → DRIVER_ARRIVED | | Jashim | |
 | 15 | STATUS_CHANGED | DRIVER_ARRIVED → STARTED | | Jashim | Fare locked |
 
-(The gaps in the IDs are Rafiq's and Shirin's events — their requests, auto-matches, fare changes, Shirin's cancel and their trip steps — stored in the same table. Shirin joining doesn't change Nusrat's fare: the pool already had 2+ passengers.)
+(The gaps in the IDs are Rafiq's and Shirin's events — their requests, auto-matches, fare changes, Shirin's cancel and their trip steps — stored in the same table. Shirin joining doesn't change Nusrat's fare: the pool already had 2+ bookings, and the discount counts bookings, not seats — PRD §7.)
 
 ---
 
