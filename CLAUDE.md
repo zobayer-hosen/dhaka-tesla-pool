@@ -1,8 +1,8 @@
 # Project rules for AI assistants — Dhaka Tesla Pool
 
 ## Source of truth
-Read docs/PRD.md, docs/ARCHITECTURE.md and docs/ERD.md before any work.
-If you must deviate from them, STOP and ask me. If I approve, update the doc in the same branch.
+Read docs/PRD.md, docs/ARCHITECTURE.md, docs/ERD.md and docs/DECISIONS.md before any work.
+If you must deviate from them, STOP and ask me. If I approve, update the doc and add the decision to docs/DECISIONS.md in the same branch.
 
 ## Stack (fixed — do not add or swap)
 - Monorepo with npm workspaces: apps/api (NestJS), apps/web (Next.js App Router, TypeScript, Tailwind)

@@ -13,7 +13,7 @@ This playbook takes the project from an empty folder to `release/v1.0.0`. The wo
 4. Work across **real days**. Never fake commit dates; the evaluator reads the timeline.
 
 **Repo:** `dhaka-tesla-pool` · **Stack:** Next.js · NestJS · PostgreSQL · TypeORM · Docker Compose
-**Design docs (source of truth):** [`docs/PRD.md`](./PRD.md) · [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) · [`docs/ERD.md`](./ERD.md) ([ERD.png](./ERD.png))
+**Design docs (source of truth):** [`docs/PRD.md`](./PRD.md) · [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) · [`docs/ERD.md`](./ERD.md) ([ERD.png](./ERD.png)) · [`docs/DECISIONS.md`](./DECISIONS.md)
 
 ---
 
@@ -173,8 +173,8 @@ Create **`CLAUDE.md`** in the repo root (Cursor: also copy it to `.cursorrules`;
 # Project rules for AI assistants — Dhaka Tesla Pool
 
 ## Source of truth
-Read docs/PRD.md, docs/ARCHITECTURE.md and docs/ERD.md before any work.
-If you must deviate from them, STOP and ask me. If I approve, update the doc in the same branch.
+Read docs/PRD.md, docs/ARCHITECTURE.md, docs/ERD.md and docs/DECISIONS.md before any work.
+If you must deviate from them, STOP and ask me. If I approve, update the doc and add the decision to docs/DECISIONS.md in the same branch.
 
 ## Stack (fixed — do not add or swap)
 - Monorepo with npm workspaces: apps/api (NestJS), apps/web (Next.js App Router, TypeScript, Tailwind)
@@ -807,7 +807,8 @@ brief §12: summary, problem statement, features implemented, screenshots (leave
 environment variables (from .env.example), local setup, Docker instructions,
 migration/seed instructions, how to run web/api/tests, demo credentials (PRD §14),
 deployment URL (placeholder), API overview (PRD §11), matching rule, fare model with
-the Nusrat/Rafiq table, money storage, concurrency handling, key decisions and trade-offs,
+the Nusrat/Rafiq table, money storage, concurrency handling, key decisions and trade-offs
+(from docs/DECISIONS.md),
 known limitations, next improvements, AI Usage (placeholder — I will write it myself),
 demo video link (placeholder).
 
