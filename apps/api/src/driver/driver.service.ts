@@ -5,12 +5,18 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager, In, LessThanOrEqual, Not } from 'typeorm';
 import { Pool } from '../database/entities/pool.entity';
+import { RideEvent } from '../database/entities/ride-event.entity';
 import { RideRequest } from '../database/entities/ride-request.entity';
 import { User } from '../database/entities/user.entity';
 import { Vehicle } from '../database/entities/vehicle.entity';
-import { PoolStatus, RequestStatus } from '../database/enums';
+import { EventType, PoolStatus, RequestStatus } from '../database/enums';
 import { isUniqueViolation } from '../database/postgres-errors';
 import { PoolingService } from '../rides/pooling.service';
+import {
+  asRequestStatus,
+  assertTransition,
+  invalidTransition,
+} from '../rides/ride-state-machine';
 import { DriverPoolView, DriverStatus, WaitingRequest } from './driver.types';
 
 // A vehicle can be on one of these at a time (partial unique index on pools).
@@ -189,6 +195,99 @@ export class DriverService {
     return this.poolView(this.dataSource.manager, poolId);
   }
 
+  arrive(driverId: string, poolId: string): Promise<DriverPoolView> {
+    return this.moveTrip(driverId, poolId, PoolStatus.DRIVER_ARRIVED);
+  }
+
+  start(driverId: string, poolId: string): Promise<DriverPoolView> {
+    return this.moveTrip(driverId, poolId, PoolStatus.STARTED);
+  }
+
+  complete(driverId: string, poolId: string): Promise<DriverPoolView> {
+    return this.moveTrip(driverId, poolId, PoolStatus.COMPLETED);
+  }
+
+  // Arrived → Start trip → Complete trip (PRD D4): the pool and every passenger
+  // still in it move together. One transaction, pool first (lock order):
+  // lock the pool → conditional update of the pool → conditional update of its
+  // requests → one history row per passenger.
+  private async moveTrip(
+    driverId: string,
+    poolId: string,
+    next: PoolStatus,
+  ): Promise<DriverPoolView> {
+    await this.dataSource.transaction(async (manager) => {
+      // Only his own trip; anyone else's looks like it doesn't exist.
+      const vehicle = await this.vehicleOf(manager, driverId);
+      if (
+        !(await manager.existsBy(Pool, { id: poolId, vehicleId: vehicle.id }))
+      ) {
+        throw new NotFoundException({
+          code: 'NOT_FOUND',
+          message: 'Trip not found',
+        });
+      }
+
+      // If Rafiq is cancelling right now, one of us waits here for the other.
+      const pool = await this.pooling.lockPool(manager, poolId);
+      const from = asRequestStatus(pool.status);
+      const to = asRequestStatus(next);
+      // No skipping steps, e.g. complete before start → 409 INVALID_TRANSITION.
+      assertTransition(from, to);
+
+      const poolUpdate = await manager
+        .createQueryBuilder()
+        .update(Pool)
+        .set({ status: next, ...stepTimestamp(next) })
+        .where('id = :poolId AND status = :expected', {
+          poolId,
+          expected: pool.status,
+        })
+        .execute();
+      if (poolUpdate.affected !== 1) {
+        throw invalidTransition(from, to);
+      }
+
+      // Everyone still at the previous step moves with the pool. Cancelled
+      // passengers don't match `status = :expected`, so they are skipped.
+      const riders = await manager.findBy(RideRequest, {
+        poolId,
+        status: from,
+      });
+      await manager
+        .createQueryBuilder()
+        .update(RideRequest)
+        .set(
+          next === PoolStatus.COMPLETED
+            ? { status: to, completedAt: () => 'now()' }
+            : { status: to },
+        )
+        .where('pool_id = :poolId AND status = :expected', {
+          poolId,
+          expected: from,
+        })
+        .execute();
+
+      if (riders.length > 0) {
+        await manager.insert(
+          RideEvent,
+          riders.map((rider) => ({
+            rideRequestId: rider.id,
+            poolId,
+            actorId: driverId,
+            type: EventType.STATUS_CHANGED,
+            fromStatus: from,
+            toStatus: to,
+            // From here on fares never change again (PRD §7).
+            note: next === PoolStatus.STARTED ? 'Fare locked' : null,
+          })),
+        );
+      }
+    });
+
+    return this.poolView(this.dataSource.manager, poolId);
+  }
+
   // A trip as the driver sees it: passengers who haven't cancelled, by first name.
   private async poolView(
     manager: EntityManager,
@@ -240,6 +339,18 @@ export class DriverService {
       status: In(ACTIVE_POOL_STATUSES),
     });
   }
+}
+
+// When the pool reached this step: arrived_at, started_at or completed_at.
+function stepTimestamp(step: PoolStatus) {
+  const now = () => 'now()';
+  if (step === PoolStatus.DRIVER_ARRIVED) {
+    return { arrivedAt: now };
+  }
+  if (step === PoolStatus.STARTED) {
+    return { startedAt: now };
+  }
+  return { completedAt: now };
 }
 
 // The driver sees passengers by first name only (PRD §9).
