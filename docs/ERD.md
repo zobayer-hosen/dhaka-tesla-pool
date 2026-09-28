@@ -2,7 +2,7 @@
 
 **Database:** PostgreSQL 16 · **ORM:** TypeORM (entities + migrations, `synchronize: false`)
 
-Five tables, three enums. Every rule that protects data (capacity, seats, one active ride, fare math) is enforced **by the database itself**, not only by the code.
+Five tables, five enums. Every rule that protects data (capacity, seats, one active ride, fare math) is enforced **by the database itself**, not only by the code.
 
 ---
 
@@ -198,6 +198,8 @@ CHECK (status IN ('REQUESTED','CANCELLED') OR pool_id IS NOT NULL)
 | `created_at` | `timestamptz` | NOT NULL, default `now()` |
 
 Rows are only ever **inserted**, never updated or deleted. They are written in the **same transaction** as the change they describe.
+
+**When the last passenger cancels, the pool is cancelled too.** Events belong to a ride request, and there is no separate pool history table, so the pool's end is recorded in the **note of that passenger's own `CANCELLED` event**: `"pool cancelled: last passenger left"`. No schema change is needed, and the note names nobody else.
 
 ---
 

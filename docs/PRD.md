@@ -357,6 +357,8 @@ Example timeline for Nusrat:
 
 Events are **never updated or deleted**; new events are only added.
 
+**Pool cancellation:** when the last passenger cancels (P5), the pool is cancelled too. This is recorded in the note of that passenger's own `CANCELLED` event: "pool cancelled: last passenger left". There is no separate pool history table (ERD §3, `ride_events`).
+
 ---
 
 ## 13. Non-functional requirements
