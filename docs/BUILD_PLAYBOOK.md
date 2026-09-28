@@ -188,6 +188,11 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc in 
 - Money = integer paisa. Never float, never decimal for arithmetic.
 - Seat claiming = ONE conditional SQL UPDATE (`... WHERE seats_taken + :seats <= capacity`) inside a transaction.
   NEVER load a pool, change seatsTaken in JS and save() it.
+- claimSeat returns a boolean and never throws; only driver accept turns false into 409 POOL_FULL.
+- Every status change = ONE conditional UPDATE (`... SET status = :next WHERE id = :id AND status = :expected`).
+  0 rows → 409 INVALID_TRANSITION (REQUEST_UNAVAILABLE for driver accept). NEVER load a ride or pool, change its status in JS and save() it.
+- Lock order: a transaction that touches a pool locks the pool row FIRST (`SELECT ... FROM pools WHERE id = :id FOR UPDATE`),
+  then updates its ride_requests. Same order everywhere, so cancel vs driver "Arrived" can't deadlock.
 - Every status or fare change writes a ride_events row in the SAME transaction.
 - Passengers see only their own rides: return 404 for other people's rides. Wrong role returns 403.
 - ride_events notes never name another passenger ("Another passenger joined", not "Rafiq joined").
