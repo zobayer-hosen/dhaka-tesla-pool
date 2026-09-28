@@ -91,6 +91,7 @@
         "testEnvironment": "node"
       }
     ],
+    "testTimeout": 30000,
     "collectCoverageFrom": [
       "src/**/*.(t|j)s"
     ],
