@@ -9,6 +9,7 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - PostgreSQL 16, TypeORM with migrations. `synchronize: false` ALWAYS.
 - Auth: @nestjs/jwt + passport-jwt, bcrypt. Validation: class-validator + global ValidationPipe.
 - Tests: Jest + supertest (api). e2e tests run against a real Postgres test database.
+- TypeScript only: all code, tests, scripts and config files are .ts/.tsx. No .js/.mjs/.cjs files. If a tool can't load a TypeScript config, STOP and ask me.
 - NOT allowed: Prisma, Redis, queues, Kafka, WebSockets, microservices, GraphQL, extra UI kits.
 
 ## Domain rules (never break)
