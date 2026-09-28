@@ -54,6 +54,51 @@ export class PoolingService {
     return result.affected === 1;
   }
 
+  // SELECT ... FROM pools WHERE id = :poolId FOR UPDATE. Holds the pool row until
+  // the transaction ends. Any transaction that changes a pool's ride requests
+  // calls this FIRST (lock order, ARCHITECTURE §5), so e.g. Rafiq's cancel and
+  // Jashim's "Arrived" wait for each other instead of deadlocking.
+  lockPool(manager: EntityManager, poolId: string): Promise<Pool> {
+    return manager
+      .createQueryBuilder(Pool, 'pool')
+      .setLock('pessimistic_write')
+      .where('pool.id = :poolId', { poolId })
+      .getOneOrFail();
+  }
+
+  // Frees a cancelled booking's seats. The caller has already locked the pool
+  // (lockPool) and cancelled the request. If no active booking is left, the pool
+  // is cancelled too, with a conditional update. Returns true in that case, so
+  // the caller can say so in the passenger's own CANCELLED event (ERD §3).
+  async releaseSeats(
+    manager: EntityManager,
+    poolId: string,
+    seats: number,
+  ): Promise<boolean> {
+    await manager
+      .createQueryBuilder()
+      .update(Pool)
+      .set({ seatsTaken: () => 'seats_taken - :seats' })
+      .where('id = :poolId', { poolId })
+      .setParameters({ seats })
+      .execute();
+
+    if ((await this.activeBookingCount(manager, poolId)) > 0) {
+      return false;
+    }
+
+    const result = await manager
+      .createQueryBuilder()
+      .update(Pool)
+      .set({ status: PoolStatus.CANCELLED })
+      .where('id = :poolId AND status = :expected', {
+        poolId,
+        expected: PoolStatus.MATCHED,
+      })
+      .execute();
+    return result.affected === 1;
+  }
+
   // The matching rule (PRD A2): same pickup zone, driver not arrived yet (pool
   // still MATCHED), enough free seats. Oldest pool first. This read is only a
   // hint: claimSeat re-checks the seats atomically.

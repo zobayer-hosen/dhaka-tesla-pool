@@ -207,14 +207,21 @@ export class RidesService {
     };
   }
 
+  // One transaction, in lock order (ARCHITECTURE §5): lock the pool → cancel the
+  // request → free its seats (cancel the pool if nobody is left) → history →
+  // recalculate the fares of whoever is still in the pool.
   async cancel(passengerId: string, rideId: string): Promise<RideView> {
     await this.dataSource.transaction(async (manager) => {
       const ride = await this.findOwnRide(manager, passengerId, rideId);
       // Only REQUESTED or MATCHED: once Jashim has arrived it's too late (PRD A7).
       assertTransition(ride.status, RequestStatus.CANCELLED);
 
-      // TODO(pooling): when the ride is in a pool, lock the pool row first
-      // (SELECT ... FOR UPDATE) and free its seats (lock order, ARCHITECTURE §5).
+      // The pool row first, then its ride requests, like every other transaction
+      // that touches a pool. If Jashim taps "Arrived" at the same moment, one of
+      // us waits here for the other to commit, instead of deadlocking.
+      if (ride.poolId) {
+        await this.pooling.lockPool(manager, ride.poolId);
+      }
 
       // One conditional UPDATE, never load → change → save(): if anything moved
       // the ride since we read it (e.g. the driver arrived), 0 rows change.
@@ -231,6 +238,11 @@ export class RidesService {
         throw invalidTransition(ride.status, RequestStatus.CANCELLED);
       }
 
+      // Cancelling frees the seats at once (PRD P5).
+      const poolCancelled = ride.poolId
+        ? await this.pooling.releaseSeats(manager, ride.poolId, ride.seats)
+        : false;
+
       await manager.insert(RideEvent, {
         rideRequestId: ride.id,
         poolId: ride.poolId,
@@ -238,7 +250,14 @@ export class RidesService {
         type: EventType.STATUS_CHANGED,
         fromStatus: ride.status,
         toStatus: RequestStatus.CANCELLED,
+        // The pool's end is recorded here: there is no pool history table.
+        note: poolCancelled ? 'pool cancelled: last passenger left' : null,
       });
+
+      // Whoever is left may be riding alone now: back to the solo fare.
+      if (ride.poolId && !poolCancelled) {
+        await this.pooling.recalculateFares(manager, ride.poolId, null);
+      }
     });
 
     return this.rideView(this.dataSource.manager, rideId);
