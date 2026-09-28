@@ -312,6 +312,7 @@ A simple, clean interface. Every screen that loads data has a **loading**, **err
 | `GET /rides/current` | Passenger | My active ride, with `coRiderCount` (other active bookings in my pool, P4) |
 | `GET /rides/:id` | Passenger (owner) | One ride with its status, fare, `coRiderCount` and timeline; `404` if not yours (demo step 7) |
 | `POST /rides/:id/cancel` | Passenger (owner) | Cancel |
+| `GET /driver/status` | Driver | Am I online? Returns `{ online }` (draws the online toggle) |
 | `PATCH /driver/status` | Driver | Go online / offline |
 | `GET /driver/requests` | Driver | Waiting requests that fit |
 | `POST /driver/requests/:id/accept` | Driver | Accept → create or join pool |
