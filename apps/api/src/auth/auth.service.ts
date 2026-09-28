@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { User } from '../database/entities/user.entity';
 import { UserRole } from '../database/enums';
 import { isUniqueViolation } from '../database/postgres-errors';
-import { JwtPayload, LoginResponse } from './auth.types';
+import { JwtPayload, LoginResponse, MeResponse } from './auth.types';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 
@@ -71,6 +71,15 @@ export class AuthService {
       });
     }
     return this.loginResponse(user);
+  }
+
+  async me(userId: string): Promise<MeResponse> {
+    const user = await this.users.findOneBy({ id: userId });
+    // A valid token for a user that no longer exists is still not a login.
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    return { id: user.id, name: user.name, email: user.email, role: user.role };
   }
 
   // Never returns the User entity itself, so password_hash can't leak.

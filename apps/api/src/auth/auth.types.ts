@@ -17,3 +17,11 @@ export interface LoginResponse {
   accessToken: string;
   user: { id: string; name: string; role: UserRole };
 }
+
+// GET /auth/me: your own details, including your email (PRD §9). Never the hash.
+export interface MeResponse {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+}
