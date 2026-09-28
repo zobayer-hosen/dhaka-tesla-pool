@@ -21,4 +21,7 @@ COPY --from=build /repo/apps/api/dist apps/api/dist
 WORKDIR /repo/apps/api
 USER node
 EXPOSE 4000
-CMD ["node", "dist/main.js"]
+# On every start: apply new migrations, seed the demo cast (safe to repeat), then
+# start the API. `exec` makes node the main process, so it receives Docker's stop signal.
+# The :prod scripts run the compiled JavaScript; the image has no TypeScript tooling.
+CMD ["sh", "-c", "npm run migration:run:prod && npm run seed:prod && exec node dist/main.js"]
