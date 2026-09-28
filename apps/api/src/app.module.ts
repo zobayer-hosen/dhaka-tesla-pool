@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { databaseOptions } from './database/database.config';
 import { HealthController } from './health/health.controller';
+import { RidesModule } from './rides/rides.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { HealthController } from './health/health.controller';
         databaseOptions(config.getOrThrow<string>('DATABASE_URL')),
     }),
     AuthModule,
+    RidesModule,
   ],
   controllers: [HealthController],
 })
