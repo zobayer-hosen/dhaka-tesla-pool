@@ -195,6 +195,35 @@ export class DriverService {
     return this.poolView(this.dataSource.manager, poolId);
   }
 
+  // "Current trip" (PRD D5). None → 404, like GET /rides/current (DECISIONS #23).
+  async currentPool(driverId: string): Promise<DriverPoolView> {
+    const manager = this.dataSource.manager;
+    const vehicle = await this.vehicleOf(manager, driverId);
+    const pool = await this.activePool(manager, vehicle.id);
+    if (!pool) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'You have no active trip',
+      });
+    }
+    return this.poolView(manager, pool.id);
+  }
+
+  // Completed trips, newest first, with passengers and total fare (PRD D5).
+  async history(driverId: string): Promise<DriverPoolView[]> {
+    const manager = this.dataSource.manager;
+    const vehicle = await this.vehicleOf(manager, driverId);
+    const pools = await manager.find(Pool, {
+      where: { vehicleId: vehicle.id, status: PoolStatus.COMPLETED },
+      order: { completedAt: 'DESC' },
+    });
+    const views: DriverPoolView[] = [];
+    for (const pool of pools) {
+      views.push(await this.poolView(manager, pool.id));
+    }
+    return views;
+  }
+
   arrive(driverId: string, poolId: string): Promise<DriverPoolView> {
     return this.moveTrip(driverId, poolId, PoolStatus.DRIVER_ARRIVED);
   }

@@ -50,6 +50,16 @@ export class DriverController {
     return this.driver.listRequests(user.id);
   }
 
+  @Get('pool')
+  pool(@CurrentUser() user: AuthUser): Promise<DriverPoolView> {
+    return this.driver.currentPool(user.id);
+  }
+
+  @Get('history')
+  history(@CurrentUser() user: AuthUser): Promise<DriverPoolView[]> {
+    return this.driver.history(user.id);
+  }
+
   // 200 with his trip after accepting (201 would suggest a new request).
   @Post('requests/:id/accept')
   @HttpCode(HttpStatus.OK)
