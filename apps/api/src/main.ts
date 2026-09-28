@@ -1,13 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { configureApp } from './app.setup';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
 
-  // Every route lives under /api/v1, e.g. GET /api/v1/health.
-  app.setGlobalPrefix('api/v1');
+  // Prefix, validation, error format and request logging (shared with e2e tests).
+  configureApp(app);
 
   // Only the web app may call the API from a browser. getOrThrow: if WEB_ORIGIN
   // were missing, CORS would silently allow every origin instead.
