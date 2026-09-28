@@ -63,6 +63,7 @@ Every request passes the same checks first: **Is the input valid?** (validation)
 - `synchronize: false` always. The schema changes **only through migrations** (`migration:generate` → review → `migration:run`), so the database the evaluator gets is exactly what's in git.
 - CHECK constraints are declared on entities with `@Check(...)` so they end up in the migration.
 - Seat claiming uses a QueryBuilder `UPDATE` (see §5), never "load entity → change number → `save()`", because that read-then-write is exactly the race we're trying to avoid.
+- Status changes follow the same idea: a conditional `UPDATE … WHERE status = :expected`, and any transaction that touches a pool locks the pool row first (see §5, "Other status changes").
 
 **When we'd switch:** if the query layer gets complex enough that type-safety of query results matters more than NestJS integration, Prisma or Drizzle would be worth it.
 
@@ -311,6 +312,38 @@ If anything inside the transaction **throws** (a real database error, or `POOL_F
 **Tested by (T6):** sending both requests at the same time with `Promise.all`, then checking that both got `201`, exactly one is `MATCHED`, the other is `REQUESTED` (saved, not lost), and `seats_taken` is 3.
 
 **At larger scale:** this still works, because at most 3 people ever compete for one pool. The bigger challenge would be matching thousands of requests across the city, which we'd split by zone and handle in order.
+
+### Other status changes
+
+Seats aren't the only race. Rafiq can tap **Cancel** at the same moment Jashim taps **Arrived**. Two rules make every status change safe.
+
+**1. Every status change is a conditional update.** The row changes only if it is still in the status we checked:
+
+```sql
+UPDATE ride_requests SET status = :next
+WHERE id = :id AND status = :expected;
+-- 1 row changed → done · 0 rows changed → someone else changed it first
+```
+
+0 rows → `409 INVALID_TRANSITION` (for driver accept: `409 REQUEST_UNAVAILABLE`). The state machine (§3) decides whether a move is allowed at all; `AND status = :expected` makes sure the row hasn't moved on since we read it. Pools work the same way. When a pool moves forward, its passengers move in one statement, `... WHERE pool_id = :poolId AND status = :expected`, so cancelled passengers are skipped automatically.
+
+**2. Lock order: the pool first, then its ride requests.** Any transaction that touches a pool first locks the pool row, then updates that pool's `ride_requests`:
+
+```sql
+SELECT id FROM pools WHERE id = :poolId FOR UPDATE;  -- TypeORM: .setLock('pessimistic_write')
+```
+
+- Rafiq cancels: **lock pool → conditional update of his request → release his seats** (and cancel the pool if he was the last passenger).
+- Jashim taps "Arrived": **lock pool → conditional update of the pool → update its requests**.
+
+Why the order matters: if cancel locked Rafiq's request first while "Arrived" locked the pool first, each would wait for the other forever (a **deadlock**; Postgres would abort one of them with an error). With the same order everywhere, the second one simply waits for the first to commit, and its conditional update then sees the new status:
+
+| Who commits first | Result |
+|---|---|
+| Rafiq's cancel | His seats are freed; "Arrived" then moves only the remaining passengers |
+| Jashim's "Arrived" | Rafiq's conditional update changes 0 rows → `409 INVALID_TRANSITION` (too late to cancel, PRD A7) |
+
+The seat-claim `UPDATE` above locks the pool row too, so auto-join and driver accept follow the same order: the pool is locked before any of its ride requests change.
 
 ---
 
