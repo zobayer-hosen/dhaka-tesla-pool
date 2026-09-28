@@ -1,6 +1,7 @@
 # Keep secrets, local installs and build output out of Docker images.
 **/node_modules
 **/dist
+**/.next
 **/coverage
 .env
 .env.*
