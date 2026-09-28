@@ -17,6 +17,7 @@ interface AuthContextValue {
   error: ApiError | null;
   // Arrow-function types: pages destructure these, so they must not rely on `this`.
   login: (email: string, password: string) => Promise<Me>;
+  signup: (name: string, email: string, password: string) => Promise<Me>;
   logout: () => void;
   retry: () => void;
 }
@@ -53,16 +54,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void loadUser();
   }, [loadUser]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { accessToken } = await api<LoginResponse>('/auth/login', {
-      method: 'POST',
-      body: { email, password },
-    });
-    setToken(accessToken);
+  // Keeps the token and loads who it belongs to.
+  const startSession = useCallback(async (response: LoginResponse) => {
+    setToken(response.accessToken);
     const me = await api<Me>('/auth/me');
     setUser(me);
     return me;
   }, []);
+
+  const login = useCallback(
+    async (email: string, password: string) =>
+      startSession(
+        await api<LoginResponse>('/auth/login', {
+          method: 'POST',
+          body: { email, password },
+        }),
+      ),
+    [startSession],
+  );
+
+  // Sign-up also logs the passenger in (DECISIONS #21).
+  const signup = useCallback(
+    async (name: string, email: string, password: string) =>
+      startSession(
+        await api<LoginResponse>('/auth/signup', {
+          method: 'POST',
+          body: { name, email, password },
+        }),
+      ),
+    [startSession],
+  );
 
   const logout = useCallback(() => {
     clearToken();
@@ -75,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, error, login, logout, retry }}
+      value={{ user, loading, error, login, signup, logout, retry }}
     >
       {children}
     </AuthContext.Provider>

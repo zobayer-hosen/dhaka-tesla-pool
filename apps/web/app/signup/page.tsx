@@ -2,35 +2,32 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { errorMessage } from '@/lib/api';
-import { homeFor, useAuth } from '@/lib/auth';
+import { useAuth } from '@/lib/auth';
 
-export default function LoginPage() {
-  const { user, loading, login } = useAuth();
+const INPUT = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2';
+
+// Passengers only: drivers are seeded (PRD A3).
+export default function SignupPage() {
+  const { signup } = useAuth();
   const router = useRouter();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Already logged in: straight to your own area.
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace(homeFor(user.role));
-    }
-  }, [user, loading, router]);
-
-  async function handleLogin() {
+  async function handleSignup() {
     setSubmitting(true);
     setError(null);
     try {
-      const me = await login(email, password);
-      router.replace(homeFor(me.role));
+      await signup(name, email, password);
+      router.replace('/ride/new');
     } catch (e) {
-      // The API's own message, e.g. "Invalid email or password".
+      // The API's validation or EMAIL_TAKEN message.
       setError(errorMessage(e));
       setSubmitting(false);
     }
@@ -38,36 +35,45 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto max-w-sm px-4 py-16">
-      <h1 className="mb-1 text-2xl font-semibold">Dhaka Tesla Pool</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Share a seat. Split the fare. Survive Dhaka traffic.
-      </p>
+      <h1 className="mb-6 text-2xl font-semibold">
+        Create a passenger account
+      </h1>
       <Card>
         <form
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void handleLogin();
+            void handleSignup();
           }}
         >
+          <label className="block text-sm">
+            Name
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={INPUT}
+            />
+          </label>
           <label className="block text-sm">
             Email
             <input
               type="email"
               required
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              onChange={(e) => setEmail(e.target.value)}
+              className={INPUT}
             />
           </label>
           <label className="block text-sm">
-            Password
+            Password (at least 8 characters)
             <input
               type="password"
               required
+              minLength={8}
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              onChange={(e) => setPassword(e.target.value)}
+              className={INPUT}
             />
           </label>
           {error && (
@@ -76,19 +82,15 @@ export default function LoginPage() {
             </p>
           )}
           <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? 'Logging in…' : 'Log in'}
+            {submitting ? 'Creating account…' : 'Sign up'}
           </Button>
         </form>
       </Card>
       <p className="mt-4 text-sm text-slate-600">
-        New passenger?{' '}
-        <Link href="/signup" className="text-emerald-700 underline">
-          Create an account
+        Already have an account?{' '}
+        <Link href="/login" className="text-emerald-700 underline">
+          Log in
         </Link>
-      </p>
-      <p className="mt-2 text-xs text-slate-500">
-        Demo accounts (password <code>password123</code>): jashim, nusrat, rafiq
-        or shirin @teslapool.dev
       </p>
     </main>
   );
