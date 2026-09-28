@@ -8,8 +8,8 @@ This playbook takes the project from an empty folder to `release/v1.0.0`. The wo
 
 1. Do the steps **in order**. Each step is **one `feature/*` branch**.
    **Backend first (Steps 1–6), then frontend (Steps 7–9).** The whole API is built and tested before any UI code exists, so the UI is built against a finished, stable API.
-2. For each step: create the branch → paste the prompt → **review every commit** → run the checks → answer the "understand" questions → merge.
-3. Never skip the review. The brief scores **ownership**: you must be able to explain every line in the video and the interview.
+2. For each step the agent runs the whole flow: create the branch → follow the prompt → commit → run lint, tests and the "Verify yourself" checks → open the PR (with the "understand" questions answered) → merge it with a merge commit. You check in only at the checkpoints (backend checkpoint, MVP done, deployment accounts, AI Usage + video).
+3. **Read every PR.** Its "Explain it simply" section and answered questions are your study material. The brief scores **ownership**: you must be able to explain every line in the video and the interview.
 4. Work across **real days**. Never fake commit dates; the evaluator reads the timeline.
 
 **Repo:** `dhaka-tesla-pool` · **Stack:** Next.js · NestJS · PostgreSQL · TypeORM · Docker Compose
@@ -94,32 +94,30 @@ gitGraph
 
 ## Git rules for every step
 
-**Start a step**
+The agent runs this whole flow, including GitHub (CLAUDE.md "Git rules").
+
+**Start a step** — always from an up-to-date master
 
 ```bash
 git checkout master
 git pull
-git checkout -b feature/<name>
+git checkout -b feature/<name>      # or fix/<name>
 ```
 
-**While working:** the AI commits; **you** review each commit (`git log -p -1`). If a commit is wrong, ask the AI to fix it with a new `fix(...)` or `refactor(...)` commit. Don't rewrite history that's already pushed.
+**While working:** the agent commits one logical change at a time and runs lint and tests before each commit. A wrong commit is corrected with a new `fix(...)` or `refactor(...)` commit. Pushed history is never rewritten.
 
-**Finish a step (via GitHub Pull Request — best traceability)**
+**Finish a step** — only when lint, tests and the step's "Verify yourself" checks all pass
 
 ```bash
 git push -u origin feature/<name>
-gh pr create --base master --title "feat(<scope>): <what this branch delivers>" --body "What, why, how tested"
+gh pr create --base master --title "feat(<scope>): <what this branch delivers>" --body-file <pr-body.md>
+gh pr merge <number> --merge        # merge commit ONLY: never --squash or --rebase
+git checkout master && git pull
 ```
 
-On GitHub, merge with **"Create a merge commit"**. ❌ **Never "Squash and merge"**: it collapses your incremental commits into one, which erases the history the evaluator wants to see. **Don't delete** the feature branch.
+**The PR description** is the study material: what changed, why, how it was verified, a short **"Explain it simply"** section (3–5 plain-English lines), and the step's **"Understand before merging"** questions **with short answers**.
 
-**Without GitHub PRs (local alternative)**
-
-```bash
-git checkout master
-git merge --no-ff feature/<name>
-git push origin master feature/<name>
-```
+❌ **Never squash or rebase-merge**: it collapses the incremental commits into one, which erases the history the evaluator wants to see. **Never delete** the feature branch. Never push directly to `master`, `pre-release` or `release/*`, except these merges and the release steps (Steps 10–11). Never force-push.
 
 **Commit format:** `<type>(<scope>): <short description>`
 
@@ -181,7 +179,7 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - PostgreSQL 16, TypeORM with migrations. `synchronize: false` ALWAYS.
 - Auth: @nestjs/jwt + passport-jwt, bcrypt. Validation: class-validator + global ValidationPipe.
 - Tests: Jest + supertest (api). e2e tests run against a real Postgres test database.
-- TypeScript only: all code, tests, scripts and config files are .ts/.tsx. No .js/.mjs/.cjs files. If a tool can't load a TypeScript config, STOP and ask me.
+- All application code, tests and scripts are TypeScript. Config files may stay in the tool's default format (e.g. eslint.config.mjs, postcss.config.mjs). Keep eslint.config.mjs; no jiti.
 - NOT allowed: Prisma, Redis, queues, Kafka, WebSockets, microservices, GraphQL, extra UI kits.
 
 ## Domain rules (never break)
@@ -200,12 +198,16 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - Error body shape: { statusCode, code, message }. Codes listed in PRD §11.
 
 ## Git rules
-- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release) or a feature/* or fix/* branch you created. Never commit to master or release/*.
-- You MAY create feature/* and fix/* branches from an up-to-date master
-  (git checkout master && git pull && git checkout -b <name>).
-- You MAY push feature/* and fix/* branches and open the PR with gh pr create.
-- NEVER merge, never push to master, pre-release or release/*, never force-push, never rewrite pushed history.
-- I review and merge every PR myself on GitHub (merge commit, never squash).
+- You create every branch from an up-to-date master:
+  git checkout master && git pull && git checkout -b <feature/* | fix/*>
+- You commit, push the branch, open a PR with `gh pr create --base master`, then merge it yourself with
+  `gh pr merge <number> --merge` (merge commit ONLY — never --squash or --rebase), then `git checkout master && git pull`.
+  Never delete feature branches.
+- Never push directly to master, pre-release or release/*, except the merges above and the release steps in the playbook.
+  Never force-push. Never rewrite pushed history.
+- Merge only when lint, tests and the step's "Verify yourself" checks all pass.
+- PR description = what changed, why, how it was verified, a short "Explain it simply" section (3–5 plain-English lines),
+  and the step's "Understand before merging" questions WITH short answers. This is my study material.
 - Commit format: <type>(<scope>): <short description>. Types: feat, fix, refactor, test, docs, chore, build.
 - One logical change per commit. 3–6 commits per step. No vague messages (update, changes, fix, final, wip).
 - Never commit .env or any secret. Only .env.example with placeholder values.
