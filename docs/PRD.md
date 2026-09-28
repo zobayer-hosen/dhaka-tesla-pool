@@ -94,9 +94,10 @@ Each story has **acceptance criteria**. A feature is done when every one of its 
 **P3. Request a ride**
 > As Nusrat, I want to book and get matched quickly.
 
-- On confirm, the system first looks for a compatible open pool (rule A2).
+- On confirm, the request is saved and the system looks for a compatible open pool (rule A2).
   - **Found:** the passenger joins it immediately → status `MATCHED`.
-  - **Not found:** the request waits → status `REQUESTED`, visible to online drivers.
+  - **Not found, or its last seat was taken at the same moment (§8):** the request waits → status `REQUESTED`, visible to online drivers.
+- Either way the request is kept and the API answers `201`.
 - A passenger with an active ride cannot book another (A4).
 
 **P4. Track my ride**
@@ -239,9 +240,9 @@ passengerFare = seatFare × seats
 
 ## 8. The last-seat rule (concurrency)
 
-**Scenario:** Bullet has **1 seat left**. Nusrat and Shirin **request a ride from Banani at the same instant**. Both requests are auto-matched to Bullet's pool, and both read "1 seat free".
+**Scenario:** Bullet has **1 seat left**. Nusrat and Shirin **request a ride from Banani at the same instant**. Both requests try to auto-join Bullet's pool, and both read "1 seat free".
 
-**Requirement:** exactly **one** gets the seat. The other gets a clear message ("This ride just filled up — we're still looking for you") and her request stays `REQUESTED`. The seat count ends at 3, never 4.
+**Requirement:** exactly **one** gets the seat. The other's request is **not lost**: it is saved and stays `REQUESTED`, visible to Jashim, and she sees "We're still looking for you". Both get `201 Created`: one with status `MATCHED`, the other with `REQUESTED`. The seat count ends at 3, never 4.
 
 **How (MVP):** the seat check and the seat update happen in **one SQL statement**, so the database processes the two requests one after the other:
 
@@ -251,6 +252,8 @@ WHERE id = :poolId AND status = 'MATCHED'
   AND seats_taken + :seats <= capacity;
 -- 1 row changed = got the seat · 0 rows changed = full
 ```
+
+**0 rows changed is not an error for a passenger.** It raises no SQL error, so the same transaction still saves her request as `REQUESTED`. Only a **driver accept** (D3) turns it into `409 POOL_FULL`, because Jashim asked for that exact seat.
 
 **Safety net:** the database constraint `CHECK (seats_taken BETWEEN 0 AND capacity)` rejects any write that would overfill Bullet, even if the code has a bug.
 
@@ -302,7 +305,7 @@ A simple, clean interface. Every screen that loads data has a **loading**, **err
 | `GET /auth/me` | Logged in | Current user |
 | `GET /zones` | Logged in | The 8 zones |
 | `POST /rides/estimate` | Passenger | Fare estimate |
-| `POST /rides` | Passenger | Request a ride (auto-join or wait) |
+| `POST /rides` | Passenger | Request a ride (auto-join or wait). Always `201`, status `MATCHED` or `REQUESTED` (§8) |
 | `GET /rides` | Passenger | My ride history |
 | `GET /rides/current` | Passenger | My active ride |
 | `GET /rides/:id` | Passenger (owner) | One ride with its status, fare and timeline; `404` if not yours (demo step 7) |
@@ -327,7 +330,7 @@ A simple, clean interface. Every screen that loads data has a **loading**, **err
 | `UNAUTHORIZED` | 401 | Missing or invalid token |
 | `FORBIDDEN` | 403 | Wrong role |
 | `NOT_FOUND` | 404 | Doesn't exist **or isn't yours** |
-| `POOL_FULL` | 409 | No seats left |
+| `POOL_FULL` | 409 | No seats left when the driver accepts (a passenger's own request never gets this; it waits as `REQUESTED`, §8) |
 | `POOL_NOT_JOINABLE` | 409 | Pool is in another pickup zone or already past `MATCHED` |
 | `REQUEST_UNAVAILABLE` | 409 | Request was already matched or cancelled |
 | `DRIVER_OFFLINE` | 409 | Driver must be online to accept |
@@ -411,7 +414,7 @@ Tests target the risky behaviour, not coverage numbers. The cast is used in ever
 | T3 | Nusrat pooled = 8500 paisa, Rafiq pooled = 10000 paisa, solo = 10000 / 12000 | Unit |
 | T4 | Rafiq can't read or cancel Nusrat's ride (`404`); a passenger can't call driver endpoints (`403`) | Integration |
 | T5 | Cancel works before arrival, fails after; cancelling frees seats | Integration |
-| T6 | Nusrat and Shirin join the last seat simultaneously (`Promise.all`) → exactly one succeeds, `seats_taken = 3` | Integration (real Postgres) |
+| T6 | Nusrat and Shirin request the last seat simultaneously (`Promise.all`) → both get `201`, exactly one is `MATCHED`, the other stays `REQUESTED` (not lost), `seats_taken = 3` | Integration (real Postgres) |
 
 ---
 

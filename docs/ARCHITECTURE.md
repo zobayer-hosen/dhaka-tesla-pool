@@ -229,7 +229,7 @@ base fare = 40 taka · per km = 20 taka · pool discount = 25% of distance charg
 
 ## 5. The last-seat problem (Nusrat vs Shirin)
 
-Bullet has **1 seat left**. Nusrat and Shirin both request a ride from Banani at the same moment, and both are auto-matched to Bullet's pool.
+Bullet has **1 seat left**. Nusrat and Shirin both request a ride from Banani at the same moment, and both try to auto-join Bullet's pool.
 
 **The trap:** if the code first *reads* "1 seat free" and then *writes* "+1", both requests can read before either writes → 4 people in a 3-seat car.
 
@@ -245,6 +245,14 @@ WHERE id = :poolId
 -- 0 rows changed → pool is full
 ```
 
+**Losing the race is not an error.** An `UPDATE` that changes 0 rows is a normal answer, not a SQL error, so the transaction doesn't have to roll back. Each `POST /rides` is **one transaction**:
+
+1. Insert the request as `REQUESTED` plus its first `ride_events` row. The request is saved **first**, so it can never be lost.
+2. Find the oldest open pool with the same pickup zone and call `claimSeat`.
+3. `claimSeat` returns `true` → the request becomes `MATCHED` (with `pool_id` and an event row). It returns `false`, or no pool fits → nothing else changes: the request stays `REQUESTED` and Jashim can still accept it.
+
+Either way the API answers **`201 Created`**, and the response's `status` says `MATCHED` or `REQUESTED`. Only a **driver accept** turns `false` into `409 POOL_FULL`, because there Jashim asked for that exact seat.
+
 ```mermaid
 sequenceDiagram
   participant N as Nusrat
@@ -255,18 +263,22 @@ sequenceDiagram
   Note over DB: Bullet: 2 of 3 seats taken
   N->>API: POST /rides (Banani, 1 seat)
   S->>API: POST /rides (Banani, 1 seat, same moment)
+  Note over API,DB: Each request is one transaction: insert as REQUESTED, then claimSeat
   API->>DB: UPDATE for Nusrat
-  API->>DB: UPDATE for Shirin (waits for Nusrat's to finish)
-  DB-->>API: Nusrat: 1 row changed (3 of 3)
-  DB-->>API: Shirin: 0 rows changed
-  API-->>N: ✅ You're in
-  API-->>S: ❌ Pool is full, still looking
+  API->>DB: UPDATE for Shirin, waits until Nusrat's transaction commits (the row lock is held until commit)
+  DB-->>API: Nusrat: 1 row changed (3 of 3), claimSeat = true
+  DB-->>API: Shirin: 0 rows changed, claimSeat = false
+  API-->>N: ✅ 201, status MATCHED
+  API-->>S: ⏳ 201, status REQUESTED (saved, still looking)
 ```
 
-**The same thing in TypeORM** (inside one transaction, together with the status change and the history row):
+**The same thing in TypeORM.** `claimSeat` runs inside the caller's transaction, together with the status change and the history row:
 
 ```ts
-await this.dataSource.transaction(async (manager) => {
+// PoolingService. Returns true if the seats were claimed. It never throws:
+// "0 rows changed" just means "no seat", and throwing would roll back the
+// caller's transaction, losing the passenger's brand-new request with it.
+async claimSeat(manager: EntityManager, poolId: string, seats: number): Promise<boolean> {
   const result = await manager
     .createQueryBuilder()
     .update(Pool)
@@ -277,19 +289,26 @@ await this.dataSource.transaction(async (manager) => {
     .setParameters({ seats })
     .execute();
 
-  if (result.affected === 0) {
-    throw new ConflictException({ code: 'POOL_FULL', message: 'This ride just filled up' });
-  }
+  return result.affected === 1;
+}
 
-  // same transaction: ride_request → MATCHED, then insert a ride_events row
-});
+// POST /rides: the request is already saved as REQUESTED in this transaction.
+if (pool && (await this.poolingService.claimSeat(manager, pool.id, ride.seats))) {
+  // same transaction: ride_request → MATCHED, ride_events row, fares recalculated
+}
+// otherwise the request simply stays REQUESTED; the API still answers 201
+
+// Driver accept: here "no seat" IS an error, because Jashim asked for this seat.
+if (!(await this.poolingService.claimSeat(manager, pool.id, ride.seats))) {
+  throw new ConflictException({ code: 'POOL_FULL', message: 'This ride just filled up' });
+}
 ```
 
-If anything inside the transaction fails, **everything** is rolled back: no seat taken, no status change, no history row.
+If anything inside the transaction **throws** (a real database error, or `POOL_FULL` in driver accept), **everything** is rolled back: no seat taken, no status change, no history row. That is exactly why `claimSeat` returns `false` instead of throwing.
 
 **Safety net:** the `CHECK (seats_taken BETWEEN 0 AND capacity)` constraint (declared with `@Check` on the `Pool` entity) blocks it at the database level too.
 
-**Tested by:** sending both requests at the same time with `Promise.all`, then checking exactly one succeeded and `seats_taken` is 3.
+**Tested by (T6):** sending both requests at the same time with `Promise.all`, then checking that both got `201`, exactly one is `MATCHED`, the other is `REQUESTED` (saved, not lost), and `seats_taken` is 3.
 
 **At larger scale:** this still works, because at most 3 people ever compete for one pool. The bigger challenge would be matching thousands of requests across the city, which we'd split by zone and handle in order.
 
