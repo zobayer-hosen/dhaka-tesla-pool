@@ -13,6 +13,8 @@
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "migration:revert": "npm run build && typeorm migration:revert -d dist/database/data-source.js",
     "seed": "npm run build && node dist/database/seed.js",
+    "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
+    "seed:prod": "node dist/database/seed.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"

@@ -26,3 +26,7 @@ To change a decision, add a new numbered entry that says which one it replaces, 
 15. **UUID primary keys default to `gen_random_uuid()`, without `uuid-ossp`.** Why: it is built into Postgres 13+, so there is no extension to install. (BUILD_PLAYBOOK Step 2)
 16. **All application code, tests and scripts are TypeScript; config files may stay in the tool's default format** (`eslint.config.mjs`, `postcss.config.mjs`). Why: one language for everything we write and explain, without adding a loader like `jiti` just to read a TypeScript config. (CLAUDE.md "Stack")
 17. **The agent opens and merges its own PRs** with `gh pr merge --merge` (merge commit only), and only when lint, tests and the step's "Verify yourself" checks pass. Each PR explains the change simply and answers the step's "understand" questions. Why: the project runs end to end with check-ins only at the checkpoints, and the PRs become study material. (CLAUDE.md "Git rules", BUILD_PLAYBOOK "Git rules for every step")
+
+## Build phase
+
+18. **Migrations and the seed run as compiled JavaScript.** `npm run migration:*` and `npm run seed` build first and run the files in `dist/`; the Docker image runs the same files on every start (migrations → seed → API). Migrations are listed one by one in `database.config.ts`, not found with a file glob. Why: local runs and Docker run the same code, no TypeScript loader (`ts-node`) is needed to read a TypeScript data source, and the app, the CLI and the tests always load the same migrations. (BUILD_PLAYBOOK Step 2)
