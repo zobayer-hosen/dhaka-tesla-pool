@@ -1,4 +1,6 @@
 import { DataSourceOptions } from 'typeorm';
+import { User } from './entities/user.entity';
+import { Vehicle } from './entities/vehicle.entity';
 
 // One set of options for the Nest app (app.module.ts), the migration CLI and the
 // seed (data-source.ts), so all of them see exactly the same entities and migrations.
@@ -6,7 +8,7 @@ export function databaseOptions(url: string): DataSourceOptions {
   return {
     type: 'postgres',
     url,
-    entities: [],
+    entities: [User, Vehicle],
     migrations: [],
     // The schema changes only through migrations we have read, never automatically.
     synchronize: false,
