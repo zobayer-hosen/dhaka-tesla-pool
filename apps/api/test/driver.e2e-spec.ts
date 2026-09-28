@@ -240,6 +240,52 @@ describe('Driver (e2e)', () => {
       .expect(200, { online: false });
   });
 
+  it('moves all 3 passengers through arrive, start and complete, one event each per step', async () => {
+    // Bullet filled the way demo.http fills it: Nusrat (accepted), Rafiq
+    // (auto-join), then Shirin's 2-seat request cancelled and rebooked with 1.
+    await goOnline();
+    const nusratRide = await requestRide(nusrat, { ...toMohakhali, seats: 1 });
+    const poolId = ((await accept(nusratRide.id).expect(200)).body as Trip).id;
+    const rafiqRide = await requestRide(rafiq, { ...toGulshan1, seats: 1 });
+    const shirinTwoSeats = await requestRide(shirin, {
+      ...toGulshan1,
+      seats: 2,
+    });
+    await cancel(shirin, shirinTwoSeats.id).expect(200);
+    const shirinRide = await requestRide(shirin, { ...toGulshan1, seats: 1 });
+    expect(await seatsTaken(app, poolId)).toBe(3);
+
+    const riders = [nusratRide.id, rafiqRide.id, shirinRide.id].sort();
+    const dataSource = app.get(DataSource);
+    const steps = [
+      ['arrive', 'DRIVER_ARRIVED'],
+      ['start', 'STARTED'],
+      ['complete', 'COMPLETED'],
+    ] as const;
+
+    for (const [action, status] of steps) {
+      await step(poolId, action).expect(200);
+
+      // All 3 riders moved; Shirin's cancelled 2-seat request stayed behind.
+      const rides = await dataSource.query<{ id: string; status: string }[]>(
+        'SELECT id, status FROM ride_requests ORDER BY created_at',
+      );
+      expect(rides).toEqual([
+        { id: nusratRide.id, status },
+        { id: rafiqRide.id, status },
+        { id: shirinTwoSeats.id, status: 'CANCELLED' },
+        { id: shirinRide.id, status },
+      ]);
+
+      // Exactly one history row per rider for this step.
+      const events = await dataSource.query<{ ride_request_id: string }[]>(
+        'SELECT ride_request_id FROM ride_events WHERE to_status = $1',
+        [status],
+      );
+      expect(events.map((e) => e.ride_request_id).sort()).toEqual(riders);
+    }
+  });
+
   it('refuses to complete or start a trip out of order (T2 over HTTP)', async () => {
     await goOnline();
     const nusratRide = await requestRide(nusrat, { ...toMohakhali, seats: 1 });
