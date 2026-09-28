@@ -219,7 +219,7 @@ Nusrat (Banani → Mohakhali) and Rafiq (Banani → Gulshan 1) both start at Ban
 
 ```
 fare = (base fare + (distance km × per-km rate) − pool discount) × seats
-base fare = 40 taka · per km = 20 taka · pool discount = 25% of distance charge (only if pool has 2+ passengers)
+base fare = 40 taka · per km = 20 taka · pool discount = 25% of distance charge (only if pool has 2+ bookings, not seats)
 ```
 
 | | Nusrat (Banani → Mohakhali, 3 km) | Rafiq (Banani → Gulshan 1, 4 km) |

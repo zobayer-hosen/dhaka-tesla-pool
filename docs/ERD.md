@@ -258,7 +258,7 @@ Check: Nusrat `(4000 + 6000 − 1500) × 1 = 8500` ✓ · Rafiq and Shirin `(400
 | 12 | STATUS_CHANGED | MATCHED → DRIVER_ARRIVED | | Jashim | |
 | 15 | STATUS_CHANGED | DRIVER_ARRIVED → STARTED | | Jashim | Fare locked |
 
-(The gaps in the IDs are Rafiq's and Shirin's events — their requests, auto-matches, fare changes, Shirin's cancel and their trip steps — stored in the same table. Shirin joining doesn't change Nusrat's fare: the pool already had 2+ passengers.)
+(The gaps in the IDs are Rafiq's and Shirin's events — their requests, auto-matches, fare changes, Shirin's cancel and their trip steps — stored in the same table. Shirin joining doesn't change Nusrat's fare: the pool already had 2+ bookings, and the discount counts bookings, not seats — PRD §7.)
 
 ---
 

@@ -104,7 +104,7 @@ Each story has **acceptance criteria**. A feature is done when every one of its 
 > As Nusrat, I want to know what's happening without asking anyone.
 
 - The "My ride" page shows status as a simple progress bar: Waiting → Matched → Driver arrived → On the way → Completed.
-- When matched, it shows: driver name (Jashim), vehicle (Bullet), **my own fare**, and "Shared with 1 other passenger".
+- When matched, it shows: driver name (Jashim), vehicle (Bullet), **my own fare**, and "Shared with N other passengers". N = the number of **other active bookings** in the pool, not seats: Nusrat with Rafiq sees "Shared with 1 other passenger", even if Rafiq booked 2 seats. The API returns N as `coRiderCount` on `GET /rides/current` and `GET /rides/:id`: a number only, never names or fares.
 - It **never** shows another passenger's name, email, fare or drop-off.
 
 **P5. Cancel**
@@ -166,7 +166,7 @@ Each story has **acceptance criteria**. A feature is done when every one of its 
 **S1.** More than one request can share one vehicle (rule A2).
 **S2.** Seats taken **never** exceed capacity, even under simultaneous requests (§8).
 **S3.** Every passenger has their **own fare and own status**.
-**S4.** Pool membership is obvious: the driver sees the list, and each passenger sees "Shared with N other passengers".
+**S4.** Pool membership is obvious: the driver sees the list, and each passenger sees "Shared with N other passengers" (N = other bookings, P4).
 
 ---
 
@@ -208,7 +208,9 @@ passengerFare = seatFare × seats
 |---|---|
 | `baseFare` | 40 taka |
 | `distanceCharge` | distance km × 20 taka |
-| `poolDiscount` | 25% of `distanceCharge`, **only if the pool has 2 or more passengers** |
+| `poolDiscount` | 25% of `distanceCharge`, **only if the pool has 2 or more active bookings** (ride requests, not seats) |
+
+**Bookings, not seats.** The discount is for sharing the car with someone else. Rafiq alone with 2 seats is **one** booking, so he pays the solo fare: (40 + 80) × 2 = **240 taka**. An *active* booking is a ride request in the pool that isn't cancelled.
 
 **Distances used in the demo** (from the fixed zone table):
 
@@ -228,7 +230,7 @@ passengerFare = seatFare × seats
 | **Pooled fare** | **85 taka** | **100 taka** |
 
 - When Nusrat books alone, she sees **100 taka**. When Rafiq joins, her fare drops to **85 taka**. Both see the update.
-- The **final fare** is locked when the trip **starts**, based on how many passengers are in the pool at that moment. If Rafiq cancels before Jashim arrives, Nusrat goes back to 100 taka.
+- The **final fare** is locked when the trip **starts**, based on how many bookings are in the pool at that moment. If Rafiq cancels before Jashim arrives, Nusrat goes back to 100 taka.
 
 ### How money is stored
 
@@ -307,8 +309,8 @@ A simple, clean interface. Every screen that loads data has a **loading**, **err
 | `POST /rides/estimate` | Passenger | Fare estimate |
 | `POST /rides` | Passenger | Request a ride (auto-join or wait). Always `201`, status `MATCHED` or `REQUESTED` (§8) |
 | `GET /rides` | Passenger | My ride history |
-| `GET /rides/current` | Passenger | My active ride |
-| `GET /rides/:id` | Passenger (owner) | One ride with its status, fare and timeline; `404` if not yours (demo step 7) |
+| `GET /rides/current` | Passenger | My active ride, with `coRiderCount` (other active bookings in my pool, P4) |
+| `GET /rides/:id` | Passenger (owner) | One ride with its status, fare, `coRiderCount` and timeline; `404` if not yours (demo step 7) |
 | `POST /rides/:id/cancel` | Passenger (owner) | Cancel |
 | `PATCH /driver/status` | Driver | Go online / offline |
 | `GET /driver/requests` | Driver | Waiting requests that fit |
