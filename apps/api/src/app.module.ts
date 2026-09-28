@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './auth/auth.module';
 import { databaseOptions } from './database/database.config';
 import { HealthController } from './health/health.controller';
 
@@ -14,6 +15,7 @@ import { HealthController } from './health/health.controller';
       useFactory: (config: ConfigService) =>
         databaseOptions(config.getOrThrow<string>('DATABASE_URL')),
     }),
+    AuthModule,
   ],
   controllers: [HealthController],
 })
