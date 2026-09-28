@@ -5,3 +5,5 @@ coverage/
 .env*
 package-lock.json
 docs/
+# Prettier rewrites "feature/*, fix/*" as italics ("feature/_, fix/_"), changing the rules.
+CLAUDE.md
