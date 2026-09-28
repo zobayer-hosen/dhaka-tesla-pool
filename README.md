@@ -188,7 +188,7 @@ Demo-only passwords, seeded automatically.
 
 ## Deployment
 
-**The delivery is the reproducible Docker deployment:** `cp .env.example .env && docker compose up --build` starts the whole system (db, api with migrations and seed, web) with health checks on any machine with Docker.
+**The delivery is the reproducible Docker deployment:** `cp .env.example .env && docker compose up --build` starts the whole system (db, api with migrations and seed, web) with health checks on any machine with Docker. Checked before release on a fresh clone of `pre-release`: 3 containers healthy, every page answers, and the PRD §14 demo passed through the API (Nusrat 10000 → 8500, Shirin rebooks to 3/3, 404 on Rafiq's ride, all three riders COMPLETED, total 28500 paisa).
 
 Why no public URL: free hosting tiers typically put idle containers to sleep (the first request then takes a long time, and the 5-second polling shows errors meanwhile) or limit how long a free Postgres lives, and setting up three hosts didn't fit this release's time box. The brief allows a documented Docker fallback, and one command that always works is more useful to an evaluator than a URL that may be asleep. Deploying needs no code change: the API reads `DATABASE_URL`, `JWT_SECRET`, `WEB_ORIGIN` and `PORT` from the environment, and the web image takes `NEXT_PUBLIC_API_URL` as a build argument.
 
