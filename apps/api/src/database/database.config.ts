@@ -1,4 +1,7 @@
 import { DataSourceOptions } from 'typeorm';
+import { Pool } from './entities/pool.entity';
+import { RideEvent } from './entities/ride-event.entity';
+import { RideRequest } from './entities/ride-request.entity';
 import { User } from './entities/user.entity';
 import { Vehicle } from './entities/vehicle.entity';
 
@@ -8,7 +11,7 @@ export function databaseOptions(url: string): DataSourceOptions {
   return {
     type: 'postgres',
     url,
-    entities: [User, Vehicle],
+    entities: [User, Vehicle, Pool, RideRequest, RideEvent],
     migrations: [],
     // The schema changes only through migrations we have read, never automatically.
     synchronize: false,
