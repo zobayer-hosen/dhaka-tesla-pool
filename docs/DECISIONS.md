@@ -12,7 +12,7 @@ To change a decision, add a new numbered entry that says which one it replaces, 
 4. **Match by same pickup zone.** Same pickup zone + pool still `MATCHED` + enough free seats. Simple, explainable, and covers Nusrat and Rafiq; route-aware matching is a next improvement. (PRD A2, §18)
 5. **Money is integer paisa.** Floats can't store money exactly; integers are exact and easy to compare in tests. The pool discount is rounded down to a whole paisa. (PRD §7)
 6. **Polling every 5 s, not WebSockets.** Simple and enough for a demo; WebSockets would add connection state to manage for no demo benefit. (PRD A9, ARCHITECTURE §7)
-7. **Type-aware lint to catch missing `await`s.** A forgotten `await` inside a transaction can run the query after the transaction has ended and lose its error; `@typescript-eslint/no-floating-promises` needs type information to catch it. *Not enabled yet — planned in `fix/type-aware-lint`.*
+7. **Type-aware lint to catch missing `await`s.** A forgotten `await` inside a transaction can run the query after the transaction has ended and lose its error; `@typescript-eslint/no-floating-promises` needs type information to catch it. *Enabled in `fix/type-aware-lint` (`recommendedTypeChecked` + `projectService` in `eslint.config.mjs`); on day one it caught the unawaited `bootstrap()` in `main.ts`.*
 
 ## Design review (`fix/design-review`, 2026-09-28)
 

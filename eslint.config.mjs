@@ -8,7 +8,23 @@ import globals from 'globals';
 export default defineConfig(
   { ignores: ['**/node_modules/', '**/dist/', '**/.next/', '**/coverage/'] },
   js.configs.recommended,
-  tseslint.configs.recommended,
+  // Type-aware rules read each file's tsconfig, so they catch bugs plain lint can't,
+  // e.g. a missing `await` inside a database transaction (no-floating-promises).
+  tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      parserOptions: {
+        // Finds the nearest tsconfig.json for each file (apps/api now, apps/web later).
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  // Plain JavaScript files, like this config, have no types to check.
+  {
+    files: ['**/*.{js,mjs,cjs}'],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
   // Formatting problems are reported as lint errors, so `npm run lint` checks both.
   prettierRecommended,
   {
