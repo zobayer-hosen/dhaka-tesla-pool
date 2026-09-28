@@ -9,7 +9,7 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - PostgreSQL 16, TypeORM with migrations. `synchronize: false` ALWAYS.
 - Auth: @nestjs/jwt + passport-jwt, bcrypt. Validation: class-validator + global ValidationPipe.
 - Tests: Jest + supertest (api). e2e tests run against a real Postgres test database.
-- TypeScript only: all code, tests, scripts and config files are .ts/.tsx. No .js/.mjs/.cjs files. If a tool can't load a TypeScript config, STOP and ask me.
+- All application code, tests and scripts are TypeScript. Config files may stay in the tool's default format (e.g. eslint.config.mjs, postcss.config.mjs). Keep eslint.config.mjs; no jiti.
 - NOT allowed: Prisma, Redis, queues, Kafka, WebSockets, microservices, GraphQL, extra UI kits.
 
 ## Domain rules (never break)
@@ -28,12 +28,16 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - Error body shape: { statusCode, code, message }. Codes listed in PRD §11.
 
 ## Git rules
-- Work ONLY on the branch I have checked out (feature/*, fix/* or pre-release) or a feature/* or fix/* branch you created. Never commit to master or release/*.
-- You MAY create feature/* and fix/* branches from an up-to-date master
-  (git checkout master && git pull && git checkout -b <name>).
-- You MAY push feature/* and fix/* branches and open the PR with gh pr create.
-- NEVER merge, never push to master, pre-release or release/*, never force-push, never rewrite pushed history.
-- I review and merge every PR myself on GitHub (merge commit, never squash).
+- You create every branch from an up-to-date master:
+  git checkout master && git pull && git checkout -b <feature/* | fix/*>
+- You commit, push the branch, open a PR with `gh pr create --base master`, then merge it yourself with
+  `gh pr merge <number> --merge` (merge commit ONLY — never --squash or --rebase), then `git checkout master && git pull`.
+  Never delete feature branches.
+- Never push directly to master, pre-release or release/*, except the merges above and the release steps in the playbook.
+  Never force-push. Never rewrite pushed history.
+- Merge only when lint, tests and the step's "Verify yourself" checks all pass.
+- PR description = what changed, why, how it was verified, a short "Explain it simply" section (3–5 plain-English lines),
+  and the step's "Understand before merging" questions WITH short answers. This is my study material.
 - Commit format: <type>(<scope>): <short description>. Types: feat, fix, refactor, test, docs, chore, build.
 - One logical change per commit. 3–6 commits per step. No vague messages (update, changes, fix, final, wip).
 - Never commit .env or any secret. Only .env.example with placeholder values.
