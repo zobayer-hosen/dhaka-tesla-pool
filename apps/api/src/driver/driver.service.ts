@@ -1,11 +1,17 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, In, LessThanOrEqual } from 'typeorm';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { DataSource, EntityManager, In, LessThanOrEqual, Not } from 'typeorm';
 import { Pool } from '../database/entities/pool.entity';
 import { RideRequest } from '../database/entities/ride-request.entity';
 import { User } from '../database/entities/user.entity';
 import { Vehicle } from '../database/entities/vehicle.entity';
 import { PoolStatus, RequestStatus } from '../database/enums';
-import { DriverStatus, WaitingRequest } from './driver.types';
+import { isUniqueViolation } from '../database/postgres-errors';
+import { PoolingService } from '../rides/pooling.service';
+import { DriverPoolView, DriverStatus, WaitingRequest } from './driver.types';
 
 // A vehicle can be on one of these at a time (partial unique index on pools).
 const ACTIVE_POOL_STATUSES = [
@@ -14,9 +20,16 @@ const ACTIVE_POOL_STATUSES = [
   PoolStatus.STARTED,
 ];
 
+function conflict(code: string, message: string): ConflictException {
+  return new ConflictException({ code, message });
+}
+
 @Injectable()
 export class DriverService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly pooling: PoolingService,
+  ) {}
 
   async getStatus(driverId: string): Promise<DriverStatus> {
     const driver = await this.dataSource.manager.findOneByOrFail(User, {
@@ -82,6 +95,132 @@ export class DriverService {
       farePaisa: ride.farePaisa,
       createdAt: ride.createdAt,
     }));
+  }
+
+  // Accept a waiting request (PRD D3). One transaction, the pool first (lock order):
+  // 1. no active trip → create a pool for Bullet (capacity copied from it);
+  //    an open trip in the same pickup zone → lock its pool row;
+  // 2. REQUESTED → MATCHED with one conditional UPDATE (0 rows → REQUEST_UNAVAILABLE);
+  // 3. claimSeat, the same one auto-join uses (false → POOL_FULL);
+  // 4. recalculate fares if 2+ bookings now share the car.
+  // Any error rolls all of it back: no pool, no seat, no status change, no event.
+  async accept(driverId: string, rideId: string): Promise<DriverPoolView> {
+    let poolId: string;
+    try {
+      poolId = await this.dataSource.transaction(async (manager) => {
+        const driver = await manager.findOneByOrFail(User, { id: driverId });
+        if (!driver.isOnline) {
+          throw conflict('DRIVER_OFFLINE', 'Go online to accept requests');
+        }
+
+        const ride = await manager.findOneBy(RideRequest, { id: rideId });
+        if (!ride) {
+          throw new NotFoundException({
+            code: 'NOT_FOUND',
+            message: 'Request not found',
+          });
+        }
+
+        const vehicle = await this.vehicleOf(manager, driverId);
+        const openPool = await this.activePool(manager, vehicle.id);
+        let id: string;
+        let note: string;
+        if (!openPool) {
+          // A brand-new pool row: nobody else can see it until we commit.
+          const inserted = await manager.insert(Pool, {
+            vehicleId: vehicle.id,
+            pickupZone: ride.pickupZone,
+            capacity: vehicle.capacity,
+            status: PoolStatus.MATCHED,
+          });
+          id = (inserted.identifiers[0] as { id: string }).id;
+          note = 'Accepted by the driver, new pool created';
+        } else {
+          // Lock order: the pool row first, then its ride requests.
+          const pool = await this.pooling.lockPool(manager, openPool.id);
+          if (
+            pool.status !== PoolStatus.MATCHED ||
+            pool.pickupZone !== ride.pickupZone
+          ) {
+            throw conflict(
+              'POOL_NOT_JOINABLE',
+              'This request is from another pickup zone, or your trip has already started',
+            );
+          }
+          id = pool.id;
+          note = 'Accepted by the driver into a shared ride';
+        }
+
+        const matched = await this.pooling.matchRequest(
+          manager,
+          ride.id,
+          id,
+          driverId,
+          note,
+        );
+        if (!matched) {
+          throw conflict(
+            'REQUEST_UNAVAILABLE',
+            'This request was already matched or cancelled',
+          );
+        }
+
+        // The only place where "no seat" is an error: Jashim asked for this exact
+        // seat. Throwing here rolls back the request update and the new pool too.
+        if (!(await this.pooling.claimSeat(manager, id, ride.seats))) {
+          throw conflict('POOL_FULL', 'This ride just filled up');
+        }
+
+        await this.pooling.recalculateFares(manager, id, ride.id);
+        return id;
+      });
+    } catch (error) {
+      // Two accepts at the same moment with no trip yet: both try to create a
+      // pool for Bullet, and uq_pools_active_vehicle lets only one through.
+      if (isUniqueViolation(error, 'uq_pools_active_vehicle')) {
+        throw conflict(
+          'POOL_NOT_JOINABLE',
+          'Your trip just changed, please try again',
+        );
+      }
+      throw error;
+    }
+
+    return this.poolView(this.dataSource.manager, poolId);
+  }
+
+  // A trip as the driver sees it: passengers who haven't cancelled, by first name.
+  private async poolView(
+    manager: EntityManager,
+    poolId: string,
+  ): Promise<DriverPoolView> {
+    const pool = await manager.findOneByOrFail(Pool, { id: poolId });
+    const rides = await manager.find(RideRequest, {
+      where: { poolId, status: Not(RequestStatus.CANCELLED) },
+      relations: { passenger: true },
+      order: { createdAt: 'ASC' },
+    });
+    const passengers = rides.map((ride) => ({
+      rideId: ride.id,
+      firstName: firstName(ride.passenger.name),
+      dropoffZone: ride.dropoffZone,
+      seats: ride.seats,
+      farePaisa: ride.farePaisa,
+      status: ride.status,
+    }));
+    return {
+      id: pool.id,
+      status: pool.status,
+      pickupZone: pool.pickupZone,
+      seatsTaken: pool.seatsTaken,
+      capacity: pool.capacity,
+      passengers,
+      totalFarePaisa: passengers.reduce((sum, p) => sum + p.farePaisa, 0),
+      createdAt: pool.createdAt,
+      arrivedAt: pool.arrivedAt,
+      startedAt: pool.startedAt,
+      completedAt: pool.completedAt,
+    };
   }
 
   // Every driver is seeded with exactly one vehicle (Jashim → Bullet).
