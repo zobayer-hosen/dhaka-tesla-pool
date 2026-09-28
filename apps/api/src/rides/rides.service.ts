@@ -12,6 +12,7 @@ import { EventType, RequestStatus } from '../database/enums';
 import { isUniqueViolation } from '../database/postgres-errors';
 import { FareService } from '../fare/fare.service';
 import { RideRequestDto } from './dto/ride-request.dto';
+import { PoolingService } from './pooling.service';
 import { assertTransition, invalidTransition } from './ride-state-machine';
 import {
   FareEstimate,
@@ -35,11 +36,25 @@ export class RidesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly fares: FareService,
+    private readonly pooling: PoolingService,
   ) {}
 
-  estimate(dto: RideRequestDto): FareEstimate {
+  // The solo fare, and the pooled fare when there is an open pool in this pickup
+  // zone that already has a booking (joining it makes 2+ bookings, PRD P2).
+  async estimate(dto: RideRequestDto): Promise<FareEstimate> {
     assertDifferentZones(dto);
     const distanceM = distanceBetween(dto.pickupZone, dto.dropoffZone);
+    const manager = this.dataSource.manager;
+
+    const pool = await this.pooling.findOpenPool(
+      manager,
+      dto.pickupZone,
+      dto.seats,
+    );
+    const canShare =
+      pool !== null &&
+      (await this.pooling.activeBookingCount(manager, pool.id)) > 0;
+
     return {
       distanceM,
       seats: dto.seats,
@@ -48,13 +63,22 @@ export class RidesService {
         seats: dto.seats,
         pooled: false,
       }),
-      // No open pool to join yet.
-      pooled: null,
+      pooled: canShare
+        ? this.fares.calculateFare({
+            distanceM,
+            seats: dto.seats,
+            pooled: true,
+          })
+        : null,
     };
   }
 
-  // Saves the request as REQUESTED with its solo fare and its first history row,
-  // in one transaction: both are saved, or neither is.
+  // One transaction (ARCHITECTURE §5):
+  // 1. save the request as REQUESTED with its solo fare and first history row,
+  //    so it can never be lost;
+  // 2. auto-join the oldest open pool in the same pickup zone, if claimSeat says
+  //    the seats are still free.
+  // Either way the answer is 201, with status MATCHED or REQUESTED.
   async requestRide(
     passengerId: string,
     dto: RideRequestDto,
@@ -87,6 +111,36 @@ export class RidesService {
           fromStatus: null,
           toStatus: RequestStatus.REQUESTED,
         });
+
+        // claimSeat locks the pool row before this request joins it (lock order).
+        // false (someone took the seat a moment ago) or no pool: the request just
+        // stays REQUESTED, visible to the driver. Never a 409 here (PRD §8).
+        const pool = await this.pooling.findOpenPool(
+          manager,
+          dto.pickupZone,
+          dto.seats,
+        );
+        if (
+          pool &&
+          (await this.pooling.claimSeat(manager, pool.id, dto.seats))
+        ) {
+          const matched = await this.pooling.matchRequest(
+            manager,
+            id,
+            pool.id,
+            null, // the system did it
+            'Joined an open pool in your pickup zone',
+          );
+          // Can't happen: nobody else can see this request before we commit.
+          if (!matched) {
+            throw invalidTransition(
+              RequestStatus.REQUESTED,
+              RequestStatus.MATCHED,
+            );
+          }
+          // 2+ bookings now share the car: everyone gets the pooled fare.
+          await this.pooling.recalculateFares(manager, pool.id, id);
+        }
         return id;
       });
     } catch (error) {
@@ -153,14 +207,21 @@ export class RidesService {
     };
   }
 
+  // One transaction, in lock order (ARCHITECTURE §5): lock the pool → cancel the
+  // request → free its seats (cancel the pool if nobody is left) → history →
+  // recalculate the fares of whoever is still in the pool.
   async cancel(passengerId: string, rideId: string): Promise<RideView> {
     await this.dataSource.transaction(async (manager) => {
       const ride = await this.findOwnRide(manager, passengerId, rideId);
       // Only REQUESTED or MATCHED: once Jashim has arrived it's too late (PRD A7).
       assertTransition(ride.status, RequestStatus.CANCELLED);
 
-      // TODO(pooling): when the ride is in a pool, lock the pool row first
-      // (SELECT ... FOR UPDATE) and free its seats (lock order, ARCHITECTURE §5).
+      // The pool row first, then its ride requests, like every other transaction
+      // that touches a pool. If Jashim taps "Arrived" at the same moment, one of
+      // us waits here for the other to commit, instead of deadlocking.
+      if (ride.poolId) {
+        await this.pooling.lockPool(manager, ride.poolId);
+      }
 
       // One conditional UPDATE, never load → change → save(): if anything moved
       // the ride since we read it (e.g. the driver arrived), 0 rows change.
@@ -177,6 +238,11 @@ export class RidesService {
         throw invalidTransition(ride.status, RequestStatus.CANCELLED);
       }
 
+      // Cancelling frees the seats at once (PRD P5).
+      const poolCancelled = ride.poolId
+        ? await this.pooling.releaseSeats(manager, ride.poolId, ride.seats)
+        : false;
+
       await manager.insert(RideEvent, {
         rideRequestId: ride.id,
         poolId: ride.poolId,
@@ -184,7 +250,14 @@ export class RidesService {
         type: EventType.STATUS_CHANGED,
         fromStatus: ride.status,
         toStatus: RequestStatus.CANCELLED,
+        // The pool's end is recorded here: there is no pool history table.
+        note: poolCancelled ? 'pool cancelled: last passenger left' : null,
       });
+
+      // Whoever is left may be riding alone now: back to the solo fare.
+      if (ride.poolId && !poolCancelled) {
+        await this.pooling.recalculateFares(manager, ride.poolId, null);
+      }
     });
 
     return this.rideView(this.dataSource.manager, rideId);
