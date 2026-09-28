@@ -4,6 +4,7 @@ import { RideEvent } from './entities/ride-event.entity';
 import { RideRequest } from './entities/ride-request.entity';
 import { User } from './entities/user.entity';
 import { Vehicle } from './entities/vehicle.entity';
+import { InitialSchema1790585110765 } from './migrations/1790585110765-InitialSchema';
 
 // One set of options for the Nest app (app.module.ts), the migration CLI and the
 // seed (data-source.ts), so all of them see exactly the same entities and migrations.
@@ -12,7 +13,9 @@ export function databaseOptions(url: string): DataSourceOptions {
     type: 'postgres',
     url,
     entities: [User, Vehicle, Pool, RideRequest, RideEvent],
-    migrations: [],
+    // Listed one by one (no file glob), so the app, the CLI and tests all load
+    // exactly the same migrations, from .ts or compiled .js alike.
+    migrations: [InitialSchema1790585110765],
     // The schema changes only through migrations we have read, never automatically.
     synchronize: false,
     migrationsRun: false,
