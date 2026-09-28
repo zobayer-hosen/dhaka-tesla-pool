@@ -16,4 +16,8 @@ async function bootstrap() {
   // Hosting platforms set PORT; locally and in Docker the API uses 4000.
   await app.listen(config.get<string>('PORT') ?? 4000);
 }
-bootstrap();
+
+// Top-level code can't `await`, so `void` says "not awaiting this is on purpose".
+// If startup fails (e.g. WEB_ORIGIN missing), Node prints the error and exits
+// with code 1 on the unhandled rejection, which is exactly what Docker should see.
+void bootstrap();
