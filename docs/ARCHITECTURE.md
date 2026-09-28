@@ -12,7 +12,7 @@ This file has five diagrams. Together they answer: *how the parts connect, what 
 
 ## 1. System architecture
 
-Three boxes, one direction. The browser only talks to Next.js, Next.js only talks to the API, and only the API talks to the database.
+Three boxes, one direction. The browser loads pages from Next.js; code running in the browser calls the API with the login token; only the API talks to the database.
 
 ```mermaid
 flowchart LR
@@ -25,25 +25,28 @@ flowchart LR
     D[("PostgreSQL<br/>(db, port 5432)<br/><br/>5 tables")]
   end
 
-  B -- "opens pages" --> W
-  W -- "REST calls (JSON)<br/>+ login token (JWT)" --> A
+  B -- "loads pages" --> W
+  B -- "fetch + JWT<br/>(CORS-allowed origin)" --> A
+  W -.->|"tells the pages where the API is<br/>(NEXT_PUBLIC_API_URL)"| A
   A -- "SQL via TypeORM" --> D
 ```
+
+**Why CORS is limited to `WEB_ORIGIN`:** the API is called straight from the browser, so it accepts browser calls only from pages served by our web app.
 
 **What each part does**
 
 | Part | Job | Example |
 |---|---|---|
-| **Browser** | What people see and click | Nusrat taps "Request ride" |
-| **Next.js** | Shows pages, calls the API | Shows Nusrat's fare and status |
+| **Browser** | What people see and click; runs the page code that calls the API | Nusrat taps "Request ride" → `POST /rides` |
+| **Next.js** | Serves the pages (the code that runs in the browser) | The "My ride" page that shows Nusrat's fare and status |
 | **NestJS API** | Checks who you are, applies all rules | "Is there a free seat? Is this your ride?" |
 | **PostgreSQL** | Stores everything safely | Bullet's seats, every ride, every status or fare change |
 
 **Inside the API: four modules**
 
 - **Auth** — sign up, log in, gives a JWT token. Passwords are hashed with bcrypt.
-- **Rides** — passenger requests a ride, sees their own rides, cancels.
-- **Driver** — Jashim goes online/offline, accepts a request, marks arrived → started → completed.
+- **Rides** — passenger requests a ride, sees their own rides, cancels. It also holds **PoolingService** (matching, `claimSeat`, `releaseSeats`) and exports it, because DriverModule uses it too.
+- **Driver** — Jashim goes online/offline, accepts a request, marks arrived → started → completed. It owns the `/driver/*` routes **and** the `/pools/:id/*` routes (arrive, start, complete). Accept uses PoolingService from RidesModule, so there is only one seat-claiming path.
 - **Fare** — calculates each passenger's fare. Pure math, no database, easy to test.
 
 Every request passes the same checks first: **Is the input valid?** (validation) → **Who is this?** (JWT) → **Are they allowed?** (passenger vs driver, and "is this your own ride?").

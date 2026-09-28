@@ -846,7 +846,7 @@ git push -u origin release/v1.0.0 --tags
 | Time | Show | Say (in your own words, not the PRD) |
 |---|---|---|
 | 0:00–1:00 | Title / story | The problem: strangers sharing Bullet, fair fares, privacy, the last seat |
-| 1:00–3:00 | ARCHITECTURE.md, ERD.md | Browser → Next.js → NestJS → Postgres · 5 tables · lifecycle · **key decision:** atomic seat UPDATE + CHECK · **trade-off:** polling instead of WebSockets |
+| 1:00–3:00 | ARCHITECTURE.md, ERD.md | Browser loads pages from Next.js and calls NestJS directly (JWT, CORS) → Postgres · 5 tables · lifecycle · **key decision:** atomic seat UPDATE + CHECK · **trade-off:** polling instead of WebSockets |
 | 3:00–6:00 | App in 3 windows | Nusrat → Jashim accepts → Rafiq auto-joins, fare 100 → 85 → **edge case:** Shirin wants 2 seats, only 1 left → arrive/start/complete → history → deployed URL |
 
 ---
