@@ -33,7 +33,7 @@ export class RidesController {
 
   @Post('estimate')
   @HttpCode(HttpStatus.OK)
-  estimate(@Body() dto: RideRequestDto): FareEstimate {
+  estimate(@Body() dto: RideRequestDto): Promise<FareEstimate> {
     return this.rides.estimate(dto);
   }
 

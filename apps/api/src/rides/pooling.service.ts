@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { EntityManager, Not } from 'typeorm';
 import { Pool } from '../database/entities/pool.entity';
-import { PoolStatus } from '../database/enums';
+import { RideEvent } from '../database/entities/ride-event.entity';
+import { RideRequest } from '../database/entities/ride-request.entity';
+import { EventType, PoolStatus, RequestStatus, Zone } from '../database/enums';
 
 // Everything that changes who sits in a pool. It lives in RidesModule and is
 // exported, so auto-join (rides) and driver accept (driver) share ONE
@@ -40,5 +42,66 @@ export class PoolingService {
       .execute();
 
     return result.affected === 1;
+  }
+
+  // The matching rule (PRD A2): same pickup zone, driver not arrived yet (pool
+  // still MATCHED), enough free seats. Oldest pool first. This read is only a
+  // hint: claimSeat re-checks the seats atomically.
+  findOpenPool(
+    manager: EntityManager,
+    pickupZone: Zone,
+    seats: number,
+  ): Promise<Pool | null> {
+    return manager
+      .createQueryBuilder(Pool, 'pool')
+      .where('pool.pickupZone = :pickupZone', { pickupZone })
+      .andWhere('pool.status = :status', { status: PoolStatus.MATCHED })
+      .andWhere('pool.seatsTaken + :seats <= pool.capacity', { seats })
+      .orderBy('pool.createdAt', 'ASC')
+      .getOne();
+  }
+
+  // REQUESTED → MATCHED into this pool: ONE conditional UPDATE plus its history
+  // row. Returns false when the request isn't REQUESTED any more (matched or
+  // cancelled first); the caller decides what that means.
+  async matchRequest(
+    manager: EntityManager,
+    rideId: string,
+    poolId: string,
+    actorId: string | null,
+    note: string,
+  ): Promise<boolean> {
+    const result = await manager
+      .createQueryBuilder()
+      .update(RideRequest)
+      .set({ status: RequestStatus.MATCHED, poolId })
+      .where('id = :rideId AND status = :expected', {
+        rideId,
+        expected: RequestStatus.REQUESTED,
+      })
+      .execute();
+    if (result.affected !== 1) {
+      return false;
+    }
+
+    await manager.insert(RideEvent, {
+      rideRequestId: rideId,
+      poolId,
+      actorId,
+      type: EventType.STATUS_CHANGED,
+      fromStatus: RequestStatus.REQUESTED,
+      toStatus: RequestStatus.MATCHED,
+      note,
+    });
+    return true;
+  }
+
+  // Bookings in the pool that aren't cancelled. Bookings, not seats: Rafiq with
+  // 2 seats is one booking (DECISIONS #11).
+  activeBookingCount(manager: EntityManager, poolId: string): Promise<number> {
+    return manager.countBy(RideRequest, {
+      poolId,
+      status: Not(RequestStatus.CANCELLED),
+    });
   }
 }
