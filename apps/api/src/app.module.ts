@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { databaseOptions } from './database/database.config';
+import { DriverModule } from './driver/driver.module';
 import { HealthController } from './health/health.controller';
 import { RidesModule } from './rides/rides.module';
 
@@ -18,6 +19,7 @@ import { RidesModule } from './rides/rides.module';
     }),
     AuthModule,
     RidesModule,
+    DriverModule,
   ],
   controllers: [HealthController],
 })

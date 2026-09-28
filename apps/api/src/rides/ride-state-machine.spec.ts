@@ -1,6 +1,10 @@
 import { ConflictException } from '@nestjs/common';
-import { RequestStatus } from '../database/enums';
-import { assertTransition, canTransition } from './ride-state-machine';
+import { PoolStatus, RequestStatus } from '../database/enums';
+import {
+  asRequestStatus,
+  assertTransition,
+  canTransition,
+} from './ride-state-machine';
 
 const { REQUESTED, MATCHED, DRIVER_ARRIVED, STARTED, COMPLETED, CANCELLED } =
   RequestStatus;
@@ -48,5 +52,27 @@ describe('ride state machine (T2)', () => {
         message: `A ride can't go from ${from} to ${to}`,
       });
     }
+  });
+});
+
+describe('pool steps', () => {
+  it('uses the same allow-list: no skipping from MATCHED to COMPLETED', () => {
+    const {
+      MATCHED: POOL_MATCHED,
+      DRIVER_ARRIVED: POOL_ARRIVED,
+      COMPLETED: POOL_COMPLETED,
+    } = PoolStatus;
+    expect(
+      canTransition(
+        asRequestStatus(POOL_MATCHED),
+        asRequestStatus(POOL_ARRIVED),
+      ),
+    ).toBe(true);
+    expect(
+      canTransition(
+        asRequestStatus(POOL_MATCHED),
+        asRequestStatus(POOL_COMPLETED),
+      ),
+    ).toBe(false);
   });
 });

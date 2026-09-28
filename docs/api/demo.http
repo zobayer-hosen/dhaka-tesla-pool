@@ -1,0 +1,200 @@
+# Dhaka Tesla Pool: the Banani rush-hour demo (PRD §14), through the API only.
+#
+# How to run it
+# 1. Start from an empty database:  docker compose down -v && docker compose up --build
+# 2. Open this file in VS Code with the "REST Client" extension (humao.rest-client).
+# 3. Click "Send Request" above each request, top to bottom. Tokens and ids are
+#    stored in variables, so later requests use the answers of earlier ones.
+#
+# Money is integer paisa: 10000 = 100 taka.
+# After step 8, this SQL tells the whole story in order:
+#   docker compose exec db psql -U teslapool -d teslapool -c "select id, type, from_status, to_status, old_fare_paisa, new_fare_paisa, note from ride_events order by id"
+
+@baseUrl = http://localhost:4000/api/v1
+@password = password123
+
+###############################################################################
+# 0. Everyone logs in (demo-only passwords from PRD §14)
+###############################################################################
+
+### Jashim logs in (driver of Bullet, 3 seats)
+# @name jashim
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{ "email": "jashim@teslapool.dev", "password": "{{password}}" }
+
+### Nusrat logs in
+# @name nusrat
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{ "email": "nusrat@teslapool.dev", "password": "{{password}}" }
+
+### Rafiq logs in
+# @name rafiq
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{ "email": "rafiq@teslapool.dev", "password": "{{password}}" }
+
+### Shirin logs in
+# @name shirin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{ "email": "shirin@teslapool.dev", "password": "{{password}}" }
+
+###############################################################################
+# 1. Jashim goes online
+###############################################################################
+
+### Expect 200 { "online": true }
+PATCH {{baseUrl}}/driver/status
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "online": true }
+
+###############################################################################
+# 2. Nusrat requests Banani → Mohakhali: sees 100 taka, status REQUESTED
+###############################################################################
+
+### The zones she can pick from (8)
+GET {{baseUrl}}/zones
+Authorization: Bearer {{nusrat.response.body.$.accessToken}}
+
+### Estimate first. Expect solo.farePaisa 10000, pooled null (no pool yet)
+POST {{baseUrl}}/rides/estimate
+Authorization: Bearer {{nusrat.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "pickupZone": "BANANI", "dropoffZone": "MOHAKHALI", "seats": 1 }
+
+### Expect 201, status REQUESTED, fare.farePaisa 10000
+# @name nusratRide
+POST {{baseUrl}}/rides
+Authorization: Bearer {{nusrat.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "pickupZone": "BANANI", "dropoffZone": "MOHAKHALI", "seats": 1 }
+
+###############################################################################
+# 3. Jashim accepts: a pool is created, 1/3 seats
+###############################################################################
+
+### Waiting requests he can accept. Expect Nusrat (first name only), 1 seat, 10000
+GET {{baseUrl}}/driver/requests
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+### Expect 200, status MATCHED, seatsTaken 1, capacity 3
+# @name accept
+POST {{baseUrl}}/driver/requests/{{nusratRide.response.body.$.id}}/accept
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+###############################################################################
+# 4. Rafiq requests Banani → Gulshan 1: auto-joins, 2/3 seats.
+#    Nusrat's fare drops to 85 taka; Rafiq pays 100.
+###############################################################################
+
+### Expect 201, status MATCHED (auto-join), fare.farePaisa 10000, coRiderCount 1
+# @name rafiqRide
+POST {{baseUrl}}/rides
+Authorization: Bearer {{rafiq.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "pickupZone": "BANANI", "dropoffZone": "GULSHAN_1", "seats": 1 }
+
+### Nusrat's ride now: fare.farePaisa 8500, coRiderCount 1, driver Jashim / Bullet
+GET {{baseUrl}}/rides/current
+Authorization: Bearer {{nusrat.response.body.$.accessToken}}
+
+###############################################################################
+# 5. Shirin asks for 2 seats, only 1 is left: she waits (edge case)
+###############################################################################
+
+### Expect 201, status REQUESTED (saved, not lost; not a 409)
+# @name shirinTwoSeats
+POST {{baseUrl}}/rides
+Authorization: Bearer {{shirin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "pickupZone": "BANANI", "dropoffZone": "GULSHAN_1", "seats": 2 }
+
+### Jashim's list: expect [] (2 seats don't fit the 1 free seat)
+GET {{baseUrl}}/driver/requests
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+###############################################################################
+# 6. Shirin cancels and books again with 1 seat: joins, 3/3, Bullet is full
+###############################################################################
+
+### Expect 200, status CANCELLED
+POST {{baseUrl}}/rides/{{shirinTwoSeats.response.body.$.id}}/cancel
+Authorization: Bearer {{shirin.response.body.$.accessToken}}
+
+### Expect 201, status MATCHED, fare.farePaisa 10000
+# @name shirinRide
+POST {{baseUrl}}/rides
+Authorization: Bearer {{shirin.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "pickupZone": "BANANI", "dropoffZone": "GULSHAN_1", "seats": 1 }
+
+### Jashim's trip: seatsTaken 3 / capacity 3; Nusrat 8500, Rafiq 10000, Shirin 10000
+GET {{baseUrl}}/driver/pool
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+###############################################################################
+# 7. Nusrat tries to read Rafiq's ride: 404 (not 403, so it doesn't even
+#    confirm that the ride exists)
+###############################################################################
+
+### Expect 404 { "code": "NOT_FOUND" }
+GET {{baseUrl}}/rides/{{rafiqRide.response.body.$.id}}
+Authorization: Bearer {{nusrat.response.body.$.accessToken}}
+
+###############################################################################
+# 8. Jashim: Arrived → Start trip → Complete trip. Everyone moves together.
+###############################################################################
+
+### Expect 200, status DRIVER_ARRIVED
+POST {{baseUrl}}/pools/{{accept.response.body.$.id}}/arrive
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+### Expect 200, status STARTED (fares are locked from here)
+POST {{baseUrl}}/pools/{{accept.response.body.$.id}}/start
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+### Expect 200, status COMPLETED, totalFarePaisa 28500
+POST {{baseUrl}}/pools/{{accept.response.body.$.id}}/complete
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+###############################################################################
+# Afterwards: everyone sees COMPLETED, and the history explains what happened
+###############################################################################
+
+### Nusrat's ride with its timeline
+# REQUESTED → MATCHED → fare 10000 → 8500 ("Another passenger joined", never
+# "Rafiq") → DRIVER_ARRIVED → STARTED ("Fare locked") → COMPLETED
+GET {{baseUrl}}/rides/{{nusratRide.response.body.$.id}}
+Authorization: Bearer {{nusrat.response.body.$.accessToken}}
+
+### Rafiq's history (newest first): COMPLETED
+GET {{baseUrl}}/rides
+Authorization: Bearer {{rafiq.response.body.$.accessToken}}
+
+### Shirin's history: COMPLETED (1 seat) and CANCELLED (2 seats)
+GET {{baseUrl}}/rides
+Authorization: Bearer {{shirin.response.body.$.accessToken}}
+
+### Jashim's trip history: 1 trip, 3 passengers, totalFarePaisa 28500
+GET {{baseUrl}}/driver/history
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+
+### Jashim goes offline (allowed now: no active trip). Expect { "online": false }
+PATCH {{baseUrl}}/driver/status
+Authorization: Bearer {{jashim.response.body.$.accessToken}}
+Content-Type: application/json
+
+{ "online": false }
