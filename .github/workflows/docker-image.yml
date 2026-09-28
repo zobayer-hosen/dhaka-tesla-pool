@@ -14,5 +14,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+    - name: Build the api Docker image
+      # There is no Dockerfile at the root. The api's Dockerfile uses the repo root
+      # as build context (npm workspaces + the shared package-lock.json), like compose.
+      run: docker build . --file apps/api/Dockerfile --tag dhaka-tesla-pool-api:$(date +%s)
