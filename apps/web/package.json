@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000"
+    "start": "next start -p 3000",
+    "test": "jest"
   },
   "dependencies": {
     "next": "^16.3.6",
@@ -14,10 +15,33 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "jest": "^30.0.0",
     "tailwindcss": "^4.3.3",
+    "ts-jest": "^29.2.5",
     "typescript": "^6.0.3"
+  },
+  "jest": {
+    "testRegex": ".*\\.spec\\.ts$",
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/$1"
+    },
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "commonjs",
+            "target": "ES2022",
+            "strict": true,
+            "esModuleInterop": true
+          }
+        }
+      ]
+    }
   }
 }
