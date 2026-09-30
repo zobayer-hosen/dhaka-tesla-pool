@@ -9,3 +9,8 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+# Local Neon CLI state: the linked project (`neon link`) and the agent skills
+# that `neon skills` installs. Each developer creates their own.
+.neon
+.claude/skills/
+skills-lock.json
