@@ -7,7 +7,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { seedCast } from '../src/database/seed-cast';
 
-export type CastMember = 'jashim' | 'nusrat' | 'rafiq' | 'shirin';
+export type CastMember = 'jashim' | 'kamal' | 'nusrat' | 'rafiq' | 'shirin';
 
 // The real AppModule against the real test database, set up exactly like main.ts
 // (prefix, validation, error format). logger: false keeps test output readable.
