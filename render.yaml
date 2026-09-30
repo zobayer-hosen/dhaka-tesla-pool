@@ -1,0 +1,36 @@
+# Render Blueprint for the NestJS API (free plan, Node runtime, no Docker).
+# How to use it and every setting explained: docs/deployment.md.
+# No secrets here: values marked `sync: false` are typed into the Render dashboard.
+services:
+  - type: web
+    name: dhaka-tesla-pool-api
+    runtime: node
+    plan: free
+    # The Neon database is in AWS us-east-1 (N. Virginia); keep the API next to it,
+    # because every API request makes several database round trips.
+    region: virginia
+    # Runs from the repo root, so npm workspaces and the shared package-lock.json
+    # are available (same commands as apps/api/Dockerfile). --include=dev: NODE_ENV
+    # is production, but the build needs dev dependencies (Nest CLI, TypeScript).
+    buildCommand: npm ci -w apps/api --include=dev && npm run build -w apps/api
+    # Starts the compiled API only. Migrations and the seed are a separate,
+    # manual step against the direct Neon URL (docs/deployment.md), never on start.
+    startCommand: npm run start:prod -w apps/api
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: NODE_ENV
+        value: production
+      # Neon POOLED connection string (host contains -pooler), ending in
+      # ?sslmode=verify-full.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1h
+      # The Vercel site's origin, e.g. https://dhaka-tesla-pool.vercel.app
+      # (no trailing slash). Several origins: separate them with commas.
+      - key: WEB_ORIGIN
+        sync: false
