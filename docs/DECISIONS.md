@@ -45,6 +45,7 @@ To change a decision, add a new numbered entry that says which one it replaces, 
 31. **The web app keeps the JWT in `localStorage`** and sends it as a Bearer header; a 401 with a token logs you out. Why: simplest way for the browser to call the API directly (#13). Trade-off: an XSS bug could read it; production would use an httpOnly cookie. (`feature/web-setup`)
 32. **`NEXT_PUBLIC_API_URL` is a Docker build argument**, not only a runtime variable, because Next.js writes `NEXT_PUBLIC_` values into the browser code at build time. It defaults to `http://localhost:4000/api/v1`. (`feature/web-setup`)
 33. **The delivery is the reproducible Docker deployment, not a public URL.** Free tiers sleep idle containers or limit free databases, and three hosts didn't fit the release time box; the brief allows a documented Docker fallback. (README "Deployment", `pre-release`)
+34. **Known deviation: Neon production runs PostgreSQL 18.6, not 16.** Docker, CI and all tests use Postgres 16; the free Neon project `tiny-truth-55799906` runs 18.6 (checked read-only on 2026-09-30). `InitialSchema` and the seed ran on it without errors. Kept for the free tier; to remove the deviation, create the Neon project with Postgres 16 and point Render's `DATABASE_URL` at it.
 
 ## Deployment (`feature/deployment`, 2026-09-30)
 
