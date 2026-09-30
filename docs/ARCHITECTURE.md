@@ -360,6 +360,8 @@ The seat-claim `UPDATE` above locks the pool row too, so auto-join and driver ac
 
 Settings come from `.env` (copy `.env.example`). No real secrets are committed.
 
+**In production** ([deployment.md](./deployment.md)) the same code runs on free hosts: web on Vercel, api on Render, database on Neon Postgres. There the api only starts; migrations and the seed are a separate step you run by hand with the direct Neon URL (DECISIONS #35).
+
 ---
 
 ## 7. What we deliberately left out
