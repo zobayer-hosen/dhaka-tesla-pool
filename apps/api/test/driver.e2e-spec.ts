@@ -31,6 +31,7 @@ const toGulshan1 = { pickupZone: 'BANANI', dropoffZone: 'GULSHAN_1' };
 describe('Driver (e2e)', () => {
   let app: INestApplication<App>;
   let jashim: string;
+  let kamal: string;
   let nusrat: string;
   let rafiq: string;
   let shirin: string;
@@ -39,6 +40,7 @@ describe('Driver (e2e)', () => {
     app = await createTestApp();
     await resetDatabase(app);
     jashim = await loginAs(app, 'jashim');
+    kamal = await loginAs(app, 'kamal');
     nusrat = await loginAs(app, 'nusrat');
     rafiq = await loginAs(app, 'rafiq');
     shirin = await loginAs(app, 'shirin');
@@ -58,12 +60,16 @@ describe('Driver (e2e)', () => {
     return request(app.getHttpServer());
   }
 
-  async function goOnline(): Promise<void> {
+  async function goOnlineAs(driver: string): Promise<void> {
     await server()
       .patch('/api/v1/driver/status')
-      .set('Authorization', `Bearer ${jashim}`)
+      .set('Authorization', `Bearer ${driver}`)
       .send({ online: true })
       .expect(200, { online: true });
+  }
+
+  function goOnline(): Promise<void> {
+    return goOnlineAs(jashim);
   }
 
   async function requestRide(
@@ -300,7 +306,7 @@ describe('Driver (e2e)', () => {
     await step(poolId, 'start').expect(409);
   });
 
-  it("gives Nusrat 403 on driver routes, and Jashim 404 on a trip that isn't his", async () => {
+  it("gives Nusrat 403 on driver routes, and Kamal 404 on Jashim's trip", async () => {
     await goOnline();
     const nusratRide = await requestRide(nusrat, { ...toMohakhali, seats: 1 });
     const poolId = ((await accept(nusratRide.id).expect(200)).body as Trip).id;
@@ -315,8 +321,27 @@ describe('Driver (e2e)', () => {
       .set('Authorization', `Bearer ${nusrat}`)
       .expect(403);
 
-    // Only one driver is seeded, so "not his" is a trip id that isn't Bullet's.
-    await step('7f3c2a10-0000-4000-8000-000000000000', 'start').expect(404);
+    // Kamal is a driver too, but Bullet's trip isn't his: to him it doesn't exist.
+    await goOnlineAs(kamal);
+    for (const action of ['arrive', 'start', 'complete']) {
+      const response = await server()
+        .post(`/api/v1/pools/${poolId}/${action}`)
+        .set('Authorization', `Bearer ${kamal}`)
+        .expect(404);
+      expect((response.body as { code: string }).code).toBe('NOT_FOUND');
+    }
+    // Nothing moved: Jashim's trip is still waiting for him.
+    expect((await get<Trip>(jashim, '/driver/pool')).status).toBe('MATCHED');
+
+    // Kamal sees Rafiq's waiting request, never Nusrat's, which Jashim accepted.
+    const rafiqRide = await requestRide(rafiq, {
+      pickupZone: 'GULSHAN_1',
+      dropoffZone: 'MOHAKHALI',
+      seats: 1,
+    });
+    expect(
+      (await get<{ id: string }[]>(kamal, '/driver/requests')).map((r) => r.id),
+    ).toEqual([rafiqRide.id]);
   });
 
   it('refuses a cancel after Jashim has arrived (T5)', async () => {
