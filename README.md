@@ -101,7 +101,6 @@ dhaka-tesla-pool/
 ├── docs/                     PRD, ARCHITECTURE, ERD, DECISIONS, SCALING, AI_LOG, deployment, api/demo.http
 ├── docker-compose.yml
 ├── render.yaml               Render blueprint for the API (docs/deployment.md)
-├── neon.ts                   Neon CLI policy: Neon Postgres only
 └── .env.example
 ```
 

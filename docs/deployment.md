@@ -6,7 +6,7 @@ Three free hosts, no code differences between them and your machine:
 |---|---|---|---|
 | Web (Next.js) | **Vercel** | `apps/web` | Vercel project settings |
 | API (NestJS) | **Render** (free web service, Node runtime) | `apps/api` | [`render.yaml`](../render.yaml) + Render dashboard (secrets) |
-| Database | **Neon** Postgres: project `tiny-truth-55799906`, branch `production`, database `neondb`, AWS us-east-1 (N. Virginia) | TypeORM migrations in `apps/api/src/database/migrations` | Neon Console, [`neon.ts`](../neon.ts) |
+| Database | **Neon** Postgres: project `tiny-truth-55799906`, branch `production`, database `neondb`, AWS us-east-1 (N. Virginia) | TypeORM migrations in `apps/api/src/database/migrations` | Neon Console |
 
 Local development doesn't change: Docker Postgres on your machine, same commands as before. `docker compose up --build` stays the one-command, reproducible way to run everything (README "Run it with Docker").
 
@@ -81,19 +81,17 @@ The official CLI is the `neon` npm package (v7; `neonctl` is the old name for th
 | 3 | `neon skills -y` | Installs Neon agent skills into `.claude/skills/` + `skills-lock.json` | Local only; both are git-ignored |
 | 4 | `neon mcp --agent claude-code --oauth` | Adds the hosted Neon MCP server to Claude Code | See the warning below |
 | 5 | `neon link --project-id tiny-truth-55799906 --branch production -y --no-env-pull` | Writes `.neon` (project + branch) so later commands target `production` | `.neon` is git-ignored. **`--no-env-pull` is required**, see below |
-| 6 | `neon config init --no-install` | Creates `neon.ts` | `--no-install`: see below |
-| 7 | (edit `neon.ts`) | `defineConfig({})`: Postgres only, nothing else declared | Already committed |
-| 8 | `neon config plan` | Read-only preview of what `neon deploy` would change | Expect "no changes" |
+
+There is **no `neon.ts`** (so no `neon config init`, `neon config plan` or `neon deploy`). The app only uses Neon Postgres, and a `neon.ts` would need `@neon/config` installed in the repo just to be read (DECISIONS #39).
 
 Why the extra flags:
 
 - **`neon link` without `--no-env-pull` rewrites your `.env`.** It pulls the branch's `DATABASE_URL` (and `DATABASE_URL_UNPOOLED`) into the existing `.env`, replacing the localhost URL. `npm run dev:api` and the migration scripts would then silently use **production**. If it happens anyway, put the localhost URL back.
-- **`neon config init` without `--no-install` runs `npm install @neon/config @neon/env`** as runtime dependencies of the monorepo. The app doesn't use them (CLAUDE.md fixes the stack), and the CLI brings its own copy of `@neon/config` to read `neon.ts`. Lint skips `neon.ts` for the same reason.
 - **`neon mcp -y` mints an account-wide API key** and writes it into the global config of every coding agent it finds. `--oauth` writes only the server URL; the agent signs in on first use. If you prefer a key, limit it: `neon mcp --agent claude-code --project-id tiny-truth-55799906 --read-only`. Revoke keys you don't need with `neon api-keys list` / `neon api-keys revoke <id>`.
 
 ### 3.2 Is `neon deploy` needed? No.
 
-`neon deploy` is an alias of `neon config apply`. It makes the Neon **branch** match `neon.ts`: Neon Auth, the Data API, Functions, object-storage buckets, and branch settings (TTL, protection, compute). It does **not** deploy the NestJS or Next.js code, and it doesn't run TypeORM migrations. Our `neon.ts` declares nothing, and a service left out is "left alone", so there is nothing to apply. Run `neon config plan` (read-only) to see that. Only run `neon deploy` if the plan shows a change you actually want.
+`neon deploy` is an alias of `neon config apply`. It makes a Neon **branch** match a `neon.ts` file: Neon Auth, the Data API, Functions, object-storage buckets, and branch settings (TTL, protection, compute). It does **not** deploy the NestJS or Next.js code, and it doesn't run TypeORM migrations. This app uses none of those Neon services, so the repo has no `neon.ts` and nothing to deploy with it.
 
 ### 3.3 Connection strings: pooled for the app, direct for migrations
 
