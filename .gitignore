@@ -14,3 +14,6 @@ coverage/
 .neon
 .claude/skills/
 skills-lock.json
+# Written by `next dev` (Next 16) on every start: agent notes, not project docs.
+apps/web/AGENTS.md
+apps/web/CLAUDE.md
