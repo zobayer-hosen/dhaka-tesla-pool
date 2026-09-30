@@ -1,5 +1,5 @@
 # Render Blueprint for the NestJS API (free plan, Node runtime, no Docker).
-# How to use it and every setting explained: docs/deployment.md.
+# Every setting explained: README "Deployment".
 # No secrets here: values marked `sync: false` are typed into the Render dashboard.
 services:
   - type: web
@@ -14,7 +14,7 @@ services:
     # is production, but the build needs dev dependencies (Nest CLI, TypeScript).
     buildCommand: npm ci -w apps/api --include=dev && npm run build -w apps/api
     # Starts the compiled API only. Migrations and the seed are a separate,
-    # manual step against the direct Neon URL (docs/deployment.md), never on start.
+    # manual step against the direct Neon URL (README "Deployment"), never on start.
     startCommand: npm run start:prod -w apps/api
     healthCheckPath: /api/v1/health
     envVars:

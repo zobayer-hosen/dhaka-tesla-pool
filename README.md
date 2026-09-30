@@ -98,9 +98,9 @@ dhaka-tesla-pool/
 │       ├── components/       Button, Card, Spinner, EmptyState, ErrorState, StatusBadge, …
 │       ├── lib/              api.ts (fetch + JWT), auth.tsx, money.ts (formatTaka)
 │       └── Dockerfile
-├── docs/                     PRD, ARCHITECTURE, ERD, DECISIONS, SCALING, AI_LOG, deployment, api/demo.http
+├── docs/                     PRD, ARCHITECTURE, ERD, DECISIONS, SCALING, AI_LOG, api/demo.http
 ├── docker-compose.yml
-├── render.yaml               Render blueprint for the API (docs/deployment.md)
+├── render.yaml               Render blueprint for the API (see Deployment)
 └── .env.example
 ```
 
@@ -159,7 +159,7 @@ npm run migration:run -w apps/api
 npm run seed -w apps/api
 ```
 
-Production (Neon) is different on purpose: migrations never run on start there. You run them by hand with the direct Neon URL, after a restore point and approval ([docs/deployment.md](docs/deployment.md) §4).
+Production (Neon) is different on purpose: migrations never run on start there. You run them by hand with the direct Neon URL, after a restore point and approval (see [Production migrations](#production-migrations)).
 
 ## Run web, api and tests without Docker for the apps
 
@@ -192,16 +192,116 @@ Demo-only passwords, seeded automatically.
 
 ## Deployment
 
-**Hosted on free tiers:** web on **Vercel** (`apps/web`), API on **Render** (`apps/api`, [`render.yaml`](render.yaml)), database on **Neon** Postgres (project `tiny-truth-55799906`, branch `production`). The full, step-by-step guide covers settings, environment variables, the Neon CLI, safe production migrations, verification and common errors: **[docs/deployment.md](docs/deployment.md)**.
+Live on free tiers:
 
-- Web: https://dhaka-tesla-pool-web-five.vercel.app
-- API: https://dhaka-tesla-pool-7d8l.onrender.com/api/v1 (health: [`/api/v1/health`](https://dhaka-tesla-pool-7d8l.onrender.com/api/v1/health))
+| Part | Where | Details |
+|---|---|---|
+| Web | https://dhaka-tesla-pool-web-five.vercel.app | Vercel project `dhaka-tesla-pool-web` (`apps/web`); deploys `master` automatically |
+| API | https://dhaka-tesla-pool-7d8l.onrender.com/api/v1 (health: [`/api/v1/health`](https://dhaka-tesla-pool-7d8l.onrender.com/api/v1/health)) | Render free web service (`apps/api`) |
+| Database | Neon project `tiny-truth-55799906`, branch `production`, database `neondb` | AWS us-east-1, Postgres 18.6 (DECISIONS #34) |
 
-Deployment notes:
+```mermaid
+flowchart LR
+  B["Browser"] -- "loads pages" --> V["Vercel<br/>Next.js"]
+  B -- "fetch + JWT<br/>(CORS: WEB_ORIGIN)" --> R["Render<br/>NestJS API"]
+  R -- "POOLED URL, TLS" --> N[("Neon Postgres<br/>production")]
+  M["Your machine<br/>migrations + seed"] -- "DIRECT URL, TLS" --> N
+```
 
-- **Cold start:** the free Render API sleeps after ~15 idle minutes. The next request takes about 30–60 s, then it's fast again.
-- **Database URLs:** the API uses Neon's **pooled** URL (host contains `-pooler`). Migrations and the seed use the **direct** URL.
-- **Migrations:** run by hand, never on API start (DECISIONS #35). `production` was migrated and seeded on 2026-09-30, after a restore-point branch `pre-migration-20260930`.
+Two settings point the halves at each other, because the browser calls the API directly (DECISIONS #13): Vercel's `NEXT_PUBLIC_API_URL` is the Render API address, and Render's `WEB_ORIGIN` is the Vercel site address.
+
+**Cold start:** the free Render API sleeps after ~15 idle minutes. The next request takes about 30–60 s (measured: 32 s), then it's fast again. Neon's free compute also suspends after 5 idle minutes; its first query then takes a few hundred ms more.
+
+### Production environment variables
+
+| Variable | Render (API) | Vercel (web) | Notes |
+|---|---|---|---|
+| `DATABASE_URL` | Neon **pooled** URL (secret) | never | Ends in `?sslmode=verify-full` (see Neon below) |
+| `JWT_SECRET` | long random value (secret) | never | Changing it logs everyone out |
+| `JWT_EXPIRES_IN` | `1h` | — | The API won't start without it |
+| `WEB_ORIGIN` | `https://dhaka-tesla-pool-web-five.vercel.app` | — | Exact match: `https`, no trailing `/`. Several origins: separate with commas |
+| `NODE_ENV` | `production` | set by Vercel | |
+| `PORT` | set by Render | — | Don't set it yourself |
+| `NEXT_PUBLIC_API_URL` | — | `https://dhaka-tesla-pool-7d8l.onrender.com/api/v1` | **Public**: built into the browser code at build time. Redeploy after changing it |
+
+Secrets live only in your local `.env` and the Render dashboard, never in Git, docs, Vercel or a `NEXT_PUBLIC_` variable.
+
+### Render (API)
+
+The live service runs the Docker image, with these settings:
+
+| Setting | Value |
+|---|---|
+| Branch | `master` |
+| Dockerfile Path / build context | `apps/api/Dockerfile` / repo root |
+| Docker Command | `node dist/main.js`, which replaces the image's "migrate → seed → start" so production never migrates on start (DECISIONS #35) |
+| Health Check Path | `/api/v1/health` |
+| Instance Type | Free |
+
+[`render.yaml`](render.yaml) describes the same API on Render's Node runtime, if you ever create it as a Blueprint. Its build command is `npm ci -w apps/api --include=dev && npm run build -w apps/api`, and its start command is `npm run start:prod -w apps/api`. `--include=dev` is needed because the build uses dev dependencies. Creating a Blueprint from it would add a second service.
+
+### Vercel (web)
+
+| Setting | Value |
+|---|---|
+| Framework Preset / Root Directory | Next.js / `apps/web` |
+| Install / Build | Defaults. npm workspaces install from the repo root |
+| Node.js Version | 24.x (recommended; same as Docker) |
+| Environment Variable | `NEXT_PUBLIC_API_URL` (Production and Preview) |
+
+Preview deployments get their own `*.vercel.app` URLs, which aren't in `WEB_ORIGIN`, so CORS blocks their API calls. Test on the production domain.
+
+### Neon
+
+- **Pooled URL for the app, direct URL for migrations.** The pooled host contains `-pooler`: PgBouncer shares a few connections, which is safe because the app keeps no session state. Migrations, the seed and `pg_dump` need the **direct** host (no `-pooler`) (DECISIONS #36).
+- **SSL comes from the URL:** end it with `?sslmode=verify-full` (encrypted, certificate checked). There's no SSL code in the app. The Console's `sslmode=require&channel_binding=require` also works, but it logs a `SECURITY WARNING`.
+- **Getting the URLs:** Neon Console → Connect (toggle "Connection pooling"), or in your own terminal (it prints the password): `neon connection-string production --project-id tiny-truth-55799906 --database-name neondb --ssl verify-full`, adding `--pooled` for the app's URL.
+- **CLI setup:** run `npm install -g neon`, then `neon login`, then `neon link --project-id tiny-truth-55799906 --branch production -y --no-env-pull`. **`--no-env-pull` matters:** without it, `link` writes production's `DATABASE_URL` into your local `.env`. `.neon` is git-ignored. There's no `neon.ts` and no `neon deploy`, because the app only uses Neon Postgres (DECISIONS #39). On Windows, run `neon` from PowerShell or cmd.
+
+### Production migrations
+
+Migrations run by hand, never on API start (DECISIONS #35). `production` was migrated and seeded on 2026-09-30, after a restore-point branch that has since been deleted. For the next migration:
+
+1. **Target:** `production` / `neondb`, **direct** URL.
+2. **Look read-only first.** `migration:show` creates TypeORM's empty `migrations` table on a never-migrated database, so run it in a read-only session.
+3. **Restore point:** `neon branches create --project-id tiny-truth-55799906 --name pre-migration-YYYYMMDD --parent production --no-compute`.
+4. **Approval,** then run:
+
+```powershell
+$env:DATABASE_URL = Read-Host -MaskInput "Neon DIRECT url (no -pooler)"   # not kept in shell history
+$env:PGOPTIONS = "-c default_transaction_read_only=on"; npm run migration:show -w apps/api; Remove-Item Env:PGOPTIONS
+npm run migration:run -w apps/api
+npm run seed -w apps/api              # demo cast, safe to repeat
+npm run migration:show -w apps/api    # every line [X]
+Remove-Item Env:DATABASE_URL          # back to .env (localhost)
+```
+
+A `DATABASE_URL` set in the terminal wins over `.env`, so one command can target Neon without editing `.env`. To roll back, use `npm run migration:revert -w apps/api`, or restore `production` from the restore-point branch in the Neon Console.
+
+### Verify
+
+```bash
+API=https://dhaka-tesla-pool-7d8l.onrender.com/api/v1
+curl -s $API/health                                      # {"status":"ok"}
+curl -s -X POST $API/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"nusrat@teslapool.dev","password":"password123"}'
+curl -s -o /dev/null -D - -H "Origin: https://dhaka-tesla-pool-web-five.vercel.app" $API/health \
+  | grep -i access-control-allow-origin                  # must echo the Vercel domain
+```
+
+### Common deployment errors
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Site says "Can't reach the server"; console says "blocked by CORS policy" | `WEB_ORIGIN` isn't exactly the site's origin, or the new value isn't deployed yet | Fix `WEB_ORIGIN` on Render, then check Events shows "Deploy live" |
+| The site calls `http://localhost:4000` | `NEXT_PUBLIC_API_URL` wasn't set when Vercel built | Set it, then Redeploy |
+| API won't start: `Configuration key "…" does not exist` | Missing variable on Render | Add it in Environment |
+| `password authentication failed` | Password was reset after the URL was copied | Copy a fresh pooled URL into Render |
+| `connection is insecure` | URL has no `sslmode` | End it with `?sslmode=verify-full` |
+| `relation "users" does not exist` | Migrations not run on this Neon branch | See Production migrations |
+| First request takes 30–60 s | Render free service was asleep | Expected on the free plan |
+
+**Security:** rotate any credential that was ever pasted into a chat or screenshot (Neon Console → Roles → reset password), then update Render. The hosted demo uses the public demo logins, so never enter real personal data.
 
 **The reproducible fallback is Docker:** `cp .env.example .env && docker compose up --build` starts the whole system (db, api with migrations and seed, web) with health checks on any machine with Docker. Checked before release on a fresh clone of `pre-release`: 3 containers healthy, every page answers, and the PRD §14 demo passed through the API (Nusrat 10000 → 8500, Shirin rebooks to 3/3, 404 on Rafiq's ride, all three riders COMPLETED, total 28500 paisa).
 
