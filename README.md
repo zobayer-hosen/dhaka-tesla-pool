@@ -98,8 +98,10 @@ dhaka-tesla-pool/
 │       ├── components/       Button, Card, Spinner, EmptyState, ErrorState, StatusBadge, …
 │       ├── lib/              api.ts (fetch + JWT), auth.tsx, money.ts (formatTaka)
 │       └── Dockerfile
-├── docs/                     PRD, ARCHITECTURE, ERD, DECISIONS, SCALING, AI_LOG, api/demo.http
+├── docs/                     PRD, ARCHITECTURE, ERD, DECISIONS, SCALING, AI_LOG, deployment, api/demo.http
 ├── docker-compose.yml
+├── render.yaml               Render blueprint for the API (docs/deployment.md)
+├── neon.ts                   Neon CLI policy: Neon Postgres only
 └── .env.example
 ```
 
@@ -119,7 +121,7 @@ Copy `.env.example` to `.env`. The values are placeholders; never commit `.env`.
 | `DATABASE_URL` | api (local run) | `postgres://teslapool:changeme@localhost:5432/teslapool` | In Docker, compose builds it with host `db` |
 | `JWT_SECRET` | api | long random string | Signs login tokens |
 | `JWT_EXPIRES_IN` | api | `1h` | Token lifetime |
-| `WEB_ORIGIN` | api | `http://localhost:3000` | The only browser origin allowed by CORS |
+| `WEB_ORIGIN` | api | `http://localhost:3000` | The browser origin allowed by CORS (several: separate with commas) |
 | `NEXT_PUBLIC_API_URL` | web (build time) | `http://localhost:4000/api/v1` | Where the browser finds the API. Public, never a secret |
 | `TEST_DATABASE_URL` | tests | `…/teslapool_test` | e2e database. Must end in `_test`; created and emptied automatically |
 
@@ -153,9 +155,12 @@ In Docker this happens automatically on every api start: `migration:run` → `se
 
 ```bash
 npm install
+npm run migration:show -w apps/api   # [X] applied, [ ] pending
 npm run migration:run -w apps/api
 npm run seed -w apps/api
 ```
+
+Production (Neon) is different on purpose: migrations never run on start there. You run them by hand with the direct Neon URL, after a restore point and approval ([docs/deployment.md](docs/deployment.md) §4).
 
 ## Run web, api and tests without Docker for the apps
 
@@ -188,9 +193,14 @@ Demo-only passwords, seeded automatically.
 
 ## Deployment
 
-**The delivery is the reproducible Docker deployment:** `cp .env.example .env && docker compose up --build` starts the whole system (db, api with migrations and seed, web) with health checks on any machine with Docker. Checked before release on a fresh clone of `pre-release`: 3 containers healthy, every page answers, and the PRD §14 demo passed through the API (Nusrat 10000 → 8500, Shirin rebooks to 3/3, 404 on Rafiq's ride, all three riders COMPLETED, total 28500 paisa).
+**Hosted on free tiers:** web on **Vercel** (`apps/web`), API on **Render** (`apps/api`, [`render.yaml`](render.yaml)), database on **Neon** Postgres (project `tiny-truth-55799906`, branch `production`). The full, step-by-step guide covers settings, environment variables, the Neon CLI, safe production migrations, verification and common errors: **[docs/deployment.md](docs/deployment.md)**.
 
-Why no public URL: free hosting tiers typically put idle containers to sleep (the first request then takes a long time, and the 5-second polling shows errors meanwhile) or limit how long a free Postgres lives, and setting up three hosts didn't fit this release's time box. The brief allows a documented Docker fallback, and one command that always works is more useful to an evaluator than a URL that may be asleep. Deploying needs no code change: the API reads `DATABASE_URL`, `JWT_SECRET`, `WEB_ORIGIN` and `PORT` from the environment, and the web image takes `NEXT_PUBLIC_API_URL` as a build argument.
+- Web: <!-- WEB URL: filled in after the first deploy -->
+- API: <!-- API URL: filled in after the first deploy --> (health: `/api/v1/health`)
+
+In production the API only starts. Migrations and the seed are a separate, manual step against the direct Neon URL, never run on every start (DECISIONS #35). Free services sleep when idle: the first request after ~15 minutes takes about a minute.
+
+**The reproducible fallback is Docker:** `cp .env.example .env && docker compose up --build` starts the whole system (db, api with migrations and seed, web) with health checks on any machine with Docker. Checked before release on a fresh clone of `pre-release`: 3 containers healthy, every page answers, and the PRD §14 demo passed through the API (Nusrat 10000 → 8500, Shirin rebooks to 3/3, 404 on Rafiq's ride, all three riders COMPLETED, total 28500 paisa).
 
 ## API overview
 
@@ -289,7 +299,7 @@ From [docs/DECISIONS.md](docs/DECISIONS.md):
 | Validation | class-validator + global `ValidationPipe` | Zod, Joi | Decorators on DTOs, one pipe for every endpoint, unknown fields rejected | Sharing schemas with the frontend → Zod |
 | Styling | Tailwind CSS | CSS modules, a UI kit | Clean screens fast, no component library to learn or ship | A design system with many designers → a component library |
 | Tests | Jest + supertest | Vitest, Playwright | e2e tests hit the real HTTP API and a real Postgres, where the race conditions live | Browser flows → add Playwright |
-| Hosting | Docker Compose | Render/Railway/Fly + Vercel + Neon | Reproducible anywhere with one command | A real launch → managed Postgres + container hosting (see Deployment) |
+| Hosting | Vercel (web) + Render (API) + Neon (Postgres), Docker Compose as the fallback | Railway, Fly.io, Supabase | Free tiers, each host runs its part natively, and Neon is plain Postgres, so the same TypeORM code and migrations run everywhere | Always-on traffic → paid instances (no sleeping), or one container platform for API + web |
 
 ## Known limitations
 
@@ -299,7 +309,7 @@ From [docs/DECISIONS.md](docs/DECISIONS.md):
 - The JWT is stored in `localStorage`. An XSS bug could read it; production should use an httpOnly cookie.
 - One seeded driver and vehicle; no driver sign-up.
 - A completed ride leaves "My ride" (it shows in history); there is no ride-detail screen (the timeline is available at `GET /rides/:id`).
-- No public deployment URL (see Deployment).
+- Free-tier hosting: the Render API sleeps after ~15 idle minutes (the next request takes about a minute), and only the production Vercel domain is allowed by CORS, not preview URLs.
 
 ## Next improvements
 

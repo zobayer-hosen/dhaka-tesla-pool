@@ -11,6 +11,9 @@ import { InitialSchema1790585110765 } from './migrations/1790585110765-InitialSc
 export function databaseOptions(url: string): DataSourceOptions {
   return {
     type: 'postgres',
+    // SSL settings come from the URL itself: a Neon URL ends in
+    // ?sslmode=verify-full (encrypted, certificate checked); the local Docker
+    // database has no sslmode, so it connects without SSL.
     url,
     entities: [User, Vehicle, Pool, RideRequest, RideEvent],
     // Listed one by one (no file glob), so the app, the CLI and tests all load

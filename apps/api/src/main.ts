@@ -12,9 +12,18 @@ async function bootstrap() {
 
   // Only the web app may call the API from a browser. getOrThrow: if WEB_ORIGIN
   // were missing, CORS would silently allow every origin instead.
-  app.enableCors({ origin: config.getOrThrow<string>('WEB_ORIGIN') });
+  // One origin, or several separated by commas (e.g. the Vercel site and
+  // http://localhost:3000). The browser's Origin header must match one exactly.
+  const webOrigins = config
+    .getOrThrow<string>('WEB_ORIGIN')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== '');
+  app.enableCors({ origin: webOrigins });
 
   // Hosting platforms set PORT; locally and in Docker the API uses 4000.
+  // With no host given, Node listens on every network interface, which is
+  // what Render needs to route requests to the app.
   await app.listen(config.get<string>('PORT') ?? 4000);
 }
 
