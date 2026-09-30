@@ -72,6 +72,15 @@ describe('Driver (e2e)', () => {
     return goOnlineAs(jashim);
   }
 
+  // A passenger who isn't in the seeded cast signs up (PRD P1) and gets a token.
+  async function signUp(name: string, email: string): Promise<string> {
+    const response = await server()
+      .post('/api/v1/auth/signup')
+      .send({ name, email, password: 'password123' })
+      .expect(201);
+    return (response.body as { accessToken: string }).accessToken;
+  }
+
   async function requestRide(
     token: string,
     body: { pickupZone: string; dropoffZone: string; seats: number },
@@ -342,6 +351,55 @@ describe('Driver (e2e)', () => {
     expect(
       (await get<{ id: string }[]>(kamal, '/driver/requests')).map((r) => r.id),
     ).toEqual([rafiqRide.id]);
+  });
+
+  it('lets Kamal take the 4th Banani passenger in Toofan when Bullet is full', async () => {
+    await goOnline();
+    const nusratRide = await requestRide(nusrat, { ...toMohakhali, seats: 1 });
+    const bulletTrip = ((await accept(nusratRide.id).expect(200)).body as Trip)
+      .id;
+    expect((await requestRide(rafiq, { ...toGulshan1, seats: 1 })).status).toBe(
+      'MATCHED',
+    );
+    expect(
+      (await requestRide(shirin, { ...toGulshan1, seats: 1 })).status,
+    ).toBe('MATCHED');
+    expect(await seatsTaken(app, bulletTrip)).toBe(3);
+
+    // A 4th passenger from Banani: Bullet has no free seat, so Arif waits,
+    // and Jashim isn't offered him.
+    const arif = await signUp('Arif', 'arif@teslapool.dev');
+    const arifRide = await requestRide(arif, { ...toMohakhali, seats: 1 });
+    expect(arifRide.status).toBe('REQUESTED');
+    expect(await get(jashim, '/driver/requests')).toEqual([]);
+
+    // Kamal offline sees nothing; online, he sees Arif and takes him in Toofan.
+    expect(await get(kamal, '/driver/requests')).toEqual([]);
+    await goOnlineAs(kamal);
+    expect(
+      (await get<{ id: string }[]>(kamal, '/driver/requests')).map((r) => r.id),
+    ).toEqual([arifRide.id]);
+    const toofanTrip = (
+      await server()
+        .post(`/api/v1/driver/requests/${arifRide.id}/accept`)
+        .set('Authorization', `Bearer ${kamal}`)
+        .expect(200)
+    ).body as Trip;
+
+    expect(toofanTrip.id).not.toBe(bulletTrip);
+    expect(toofanTrip).toMatchObject({
+      status: 'MATCHED',
+      seatsTaken: 1,
+      capacity: 3,
+      passengers: [{ firstName: 'Arif', seats: 1, farePaisa: 10000 }],
+    });
+    const arifNow = await get<{ driver: { name: string; vehicle: string } }>(
+      arif,
+      '/rides/current',
+    );
+    expect(arifNow.driver).toMatchObject({ name: 'Kamal', vehicle: 'Toofan' });
+    // Bullet's trip is untouched.
+    expect(await seatsTaken(app, bulletTrip)).toBe(3);
   });
 
   it('refuses a cancel after Jashim has arrived (T5)', async () => {
