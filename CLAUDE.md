@@ -33,13 +33,13 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - You commit, push the branch, open a PR with `gh pr create --base master`, then merge it yourself with
   `gh pr merge <number> --merge` (merge commit ONLY — never --squash or --rebase), then `git checkout master && git pull`.
   Never delete feature branches.
-- Never push directly to master, pre-release or release/*, except the merges above and the release steps in the playbook.
+- Never push directly to master, pre-release or release/*, except the merges above and cutting a release (a release/* branch and its tag).
   Never force-push. Never rewrite pushed history.
-- Merge only when lint, tests and the step's "Verify yourself" checks all pass.
+- Merge only when lint, tests and the change's own manual checks all pass.
 - PR description = what changed, why, how it was verified, a short "Explain it simply" section (3–5 plain-English lines),
-  and the step's "Understand before merging" questions WITH short answers. This is my study material.
+  and a few "Understand before merging" questions WITH short answers. This is my study material.
 - Commit format: <type>(<scope>): <short description>. Types: feat, fix, refactor, test, docs, chore, build.
-- One logical change per commit. 3–6 commits per step. No vague messages (update, changes, fix, final, wip).
+- One logical change per commit. 3–6 commits per branch. No vague messages (update, changes, fix, final, wip).
 - Never commit .env or any secret. Only .env.example with placeholder values.
 
 ## How to work
