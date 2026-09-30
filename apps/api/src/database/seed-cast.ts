@@ -11,13 +11,31 @@ const BCRYPT_ROUNDS = 10;
 
 const cast = [
   { name: 'Jashim', email: 'jashim@teslapool.dev', role: UserRole.DRIVER },
+  { name: 'Kamal', email: 'kamal@teslapool.dev', role: UserRole.DRIVER },
   { name: 'Nusrat', email: 'nusrat@teslapool.dev', role: UserRole.PASSENGER },
   { name: 'Rafiq', email: 'rafiq@teslapool.dev', role: UserRole.PASSENGER },
   { name: 'Shirin', email: 'shirin@teslapool.dev', role: UserRole.PASSENGER },
 ];
 
-// Adds Jashim, Bullet, Nusrat, Rafiq and Shirin. Used by the seed script and by
-// the e2e tests, so tests run with exactly the demo cast.
+// Drivers are seed-only (PRD A3): each one drives one 3-seat battery "Tesla".
+const vehicles = [
+  {
+    driverEmail: 'jashim@teslapool.dev',
+    nickname: 'Bullet',
+    plateNumber: 'DHAKA-BA-11-0841',
+    capacity: 3,
+  },
+  {
+    driverEmail: 'kamal@teslapool.dev',
+    nickname: 'Toofan',
+    plateNumber: 'DHAKA-GA-22-1107',
+    capacity: 3,
+  },
+];
+
+// Adds the cast: Jashim with Bullet, Kamal with Toofan, and Nusrat, Rafiq and
+// Shirin. Used by the seed script and by the e2e tests, so tests run with
+// exactly the demo cast.
 export async function seedCast(manager: EntityManager): Promise<void> {
   for (const person of cast) {
     const passwordHash = await bcrypt.hash(DEMO_PASSWORD, BCRYPT_ROUNDS);
@@ -32,19 +50,14 @@ export async function seedCast(manager: EntityManager): Promise<void> {
       .execute();
   }
 
-  const jashim = await manager.findOneByOrFail(User, {
-    email: 'jashim@teslapool.dev',
-  });
-  await manager
-    .createQueryBuilder()
-    .insert()
-    .into(Vehicle)
-    .values({
-      driverId: jashim.id,
-      nickname: 'Bullet',
-      plateNumber: 'DHAKA-BA-11-0841',
-      capacity: 3,
-    })
-    .orIgnore()
-    .execute();
+  for (const { driverEmail, ...vehicle } of vehicles) {
+    const driver = await manager.findOneByOrFail(User, { email: driverEmail });
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(Vehicle)
+      .values({ driverId: driver.id, ...vehicle })
+      .orIgnore()
+      .execute();
+  }
 }

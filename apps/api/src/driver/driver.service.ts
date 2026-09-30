@@ -62,7 +62,7 @@ export class DriverService {
 
   // Waiting requests, oldest first, but only those he can actually accept (D2):
   // - offline: none;
-  // - no active trip: every request that fits Bullet;
+  // - no active trip: every request that fits his vehicle;
   // - trip still MATCHED: same pickup zone and fits the free seats;
   // - trip past MATCHED (he has arrived): none, nobody joins after arrival.
   async listRequests(driverId: string): Promise<WaitingRequest[]> {
@@ -104,7 +104,7 @@ export class DriverService {
   }
 
   // Accept a waiting request (PRD D3). One transaction, the pool first (lock order):
-  // 1. no active trip → create a pool for Bullet (capacity copied from it);
+  // 1. no active trip → create a pool for his vehicle (capacity copied from it);
   //    an open trip in the same pickup zone → lock its pool row;
   // 2. REQUESTED → MATCHED with one conditional UPDATE (0 rows → REQUEST_UNAVAILABLE);
   // 3. claimSeat, the same one auto-join uses (false → POOL_FULL);
@@ -351,7 +351,7 @@ export class DriverService {
     };
   }
 
-  // Every driver is seeded with exactly one vehicle (Jashim → Bullet).
+  // Every driver is seeded with exactly one vehicle (Jashim → Bullet, Kamal → Toofan).
   private vehicleOf(
     manager: EntityManager,
     driverId: string,
