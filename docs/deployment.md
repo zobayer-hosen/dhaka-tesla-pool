@@ -8,6 +8,17 @@ Three free hosts, no code differences between them and your machine:
 | API (NestJS) | **Render** (free web service, Node runtime) | `apps/api` | [`render.yaml`](../render.yaml) + Render dashboard (secrets) |
 | Database | **Neon** Postgres: project `tiny-truth-55799906`, branch `production`, database `neondb`, AWS us-east-1 (N. Virginia) | TypeORM migrations in `apps/api/src/database/migrations` | Neon Console |
 
+**Current deployment (2026-09-30)**
+
+| | Value |
+|---|---|
+| Web | https://dhaka-tesla-pool-web-five.vercel.app (Vercel project `dhaka-tesla-pool-web`, deploys `master` automatically) |
+| API | https://dhaka-tesla-pool-7d8l.onrender.com/api/v1 (Render, free). This service runs the **Docker** image `apps/api/Dockerfile` with Docker Command `node dist/main.js`, so it never migrates on start. `render.yaml` describes the same API on Render's Node runtime |
+| Database | Neon `tiny-truth-55799906` / `production` / `neondb`, Postgres 18.6. The API uses the **pooled** URL; migrations and the seed use the **direct** URL |
+| Schema | `InitialSchema1790585110765` applied and the cast seeded by hand on 2026-09-30 (§4.2) |
+| Restore point | Neon branch `pre-migration-20260930` (`br-jolly-queen-b7ysni09`, no compute): `production` just before that migration. Delete it once it's no longer needed |
+| Cold start | After ~15 idle minutes the next API request takes about 30–60 s (measured: 32 s) |
+
 Local development doesn't change: Docker Postgres on your machine, same commands as before. `docker compose up --build` stays the one-command, reproducible way to run everything (README "Run it with Docker").
 
 ```mermaid
