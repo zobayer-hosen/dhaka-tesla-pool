@@ -49,10 +49,11 @@ describe('Demo reset (e2e)', () => {
 
     const dataSource = app.get(DataSource);
     const before = await countDemoRows(dataSource.manager);
+    // The seeded cast: 5 users (Jashim and Kamal drive), 2 vehicles.
     expect(before).toMatchObject({
-      users: 4,
+      users: 5,
       driversOnline: 1,
-      vehicles: 1,
+      vehicles: 2,
       pools: 1,
       rideRequests: 2,
     });
@@ -61,9 +62,9 @@ describe('Demo reset (e2e)', () => {
     await dataSource.transaction((manager) => clearDemoRides(manager));
 
     expect(await countDemoRows(dataSource.manager)).toEqual({
-      users: 4,
+      users: 5,
       driversOnline: 0,
-      vehicles: 1,
+      vehicles: 2,
       pools: 0,
       rideRequests: 0,
       rideEvents: 0,

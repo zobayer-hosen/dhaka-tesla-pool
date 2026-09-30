@@ -13,7 +13,7 @@ If you must deviate from them, STOP and ask me. If I approve, update the doc and
 - NOT allowed: Prisma, Redis, queues, Kafka, WebSockets, microservices, GraphQL, extra UI kits.
 
 ## Domain rules (never break)
-- Cast everywhere (seed, tests, examples): Jashim (driver), Bullet (vehicle, capacity 3), Nusrat, Rafiq, Shirin. Never user1/driver1/foo.
+- Cast everywhere (seed, tests, examples): Jashim (driver), Bullet (vehicle, capacity 3), Kamal (second driver), Toofan (his vehicle, capacity 3), Nusrat, Rafiq, Shirin. Never user1/driver1/foo.
 - Money = integer paisa. Never float, never decimal for arithmetic.
 - Seat claiming = ONE conditional SQL UPDATE (`... WHERE seats_taken + :seats <= capacity`) inside a transaction.
   NEVER load a pool, change seatsTaken in JS and save() it.

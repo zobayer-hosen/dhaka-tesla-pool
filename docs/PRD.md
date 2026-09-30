@@ -47,6 +47,7 @@ The cast is used identically in seed data, tests, the demo and this document.
 | Person | Role | What they want | Demo trip |
 |---|---|---|---|
 | **Jashim** | Driver of **Bullet** (3 seats) | Know who's riding and when he can go | — |
+| **Kamal** | Driver of **Toofan** (3 seats, plate DHAKA-GA-22-1107) | Pick up the riders Bullet has no room for | — |
 | **Nusrat** | Passenger, running late | Get to work, fair price | Banani → Mohakhali, 1 seat |
 | **Rafiq** | Passenger, stranger to Nusrat | Same route, cheaper, no small talk | Banani → Gulshan 1, 1 seat |
 | **Shirin** | Passenger, arrives last | Grab the last seat | Banani → Gulshan 1, 1 seat |
@@ -387,6 +388,7 @@ Loaded automatically on first start.
 | Name | Email | Password | Role |
 |---|---|---|---|
 | Jashim | `jashim@teslapool.dev` | `password123` | Driver (Bullet, 3 seats) |
+| Kamal | `kamal@teslapool.dev` | `password123` | Driver (Toofan, 3 seats) |
 | Nusrat | `nusrat@teslapool.dev` | `password123` | Passenger |
 | Rafiq | `rafiq@teslapool.dev` | `password123` | Passenger |
 | Shirin | `shirin@teslapool.dev` | `password123` | Passenger |

@@ -23,7 +23,7 @@ export interface RideView {
   fare: FareBreakdown;
   // Other active bookings in the same pool (bookings, not seats); 0 when not in one.
   coRiderCount: number;
-  // Jashim and Bullet once matched; null while waiting.
+  // The driver and his vehicle once matched (e.g. Jashim and Bullet); null while waiting.
   driver: { name: string; vehicle: string; plateNumber: string } | null;
   createdAt: Date;
   cancelledAt: Date | null;
