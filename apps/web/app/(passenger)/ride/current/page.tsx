@@ -1,12 +1,11 @@
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
-import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { FareBreakdown } from '@/components/FareBreakdown';
+import { NoActiveRide } from '@/components/NoActiveRide';
 import { Spinner } from '@/components/Spinner';
 import { StatusProgress } from '@/components/StatusProgress';
 import { api, errorMessage } from '@/lib/api';
@@ -44,20 +43,10 @@ export default function CurrentRidePage() {
   if (loading) {
     return <Spinner />;
   }
-  // No active ride is a normal answer (DECISIONS #23), not an error.
+  // No active ride is a normal answer (DECISIONS #23), not an error. The ride
+  // she just completed isn't active any more, so NoActiveRide shows it.
   if (error?.code === 'NOT_FOUND') {
-    return (
-      <EmptyState title="No active ride — book one">
-        <Link href="/ride/new" className="text-emerald-700 underline">
-          Book a ride
-        </Link>
-        <span className="mx-2 text-slate-400">·</span>
-        {/* A completed ride isn't active any more: it is in the history. */}
-        <Link href="/rides" className="text-emerald-700 underline">
-          See past rides
-        </Link>
-      </EmptyState>
-    );
+    return <NoActiveRide />;
   }
   if (error || !ride) {
     return (
