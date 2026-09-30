@@ -10,6 +10,7 @@ import { FareBreakdown } from '@/components/FareBreakdown';
 import { Spinner } from '@/components/Spinner';
 import { StatusProgress } from '@/components/StatusProgress';
 import { api, errorMessage } from '@/lib/api';
+import { sharingText } from '@/lib/ride-view';
 import type { Ride } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
 import { zoneName } from '@/lib/zones';
@@ -67,6 +68,7 @@ export default function CurrentRidePage() {
     );
   }
 
+  const sharing = sharingText(ride.status, ride.coRiderCount);
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">My ride</h1>
@@ -88,12 +90,7 @@ export default function CurrentRidePage() {
           </p>
         )}
 
-        {ride.coRiderCount > 0 && (
-          <p className="text-sm text-emerald-700">
-            Shared with {ride.coRiderCount} other passenger
-            {ride.coRiderCount > 1 ? 's' : ''}
-          </p>
-        )}
+        {sharing && <p className="text-sm text-emerald-700">{sharing}</p>}
 
         <FareBreakdown fare={ride.fare} seats={ride.seats} />
 
