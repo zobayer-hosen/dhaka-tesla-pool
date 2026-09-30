@@ -155,7 +155,7 @@ In Docker this happens automatically on every api start: `migration:run` → `se
 
 ```bash
 npm install
-npm run migration:show -w apps/api   # read-only: [X] applied, [ ] pending
+npm run migration:show -w apps/api   # [X] applied, [ ] pending
 npm run migration:run -w apps/api
 npm run seed -w apps/api
 ```

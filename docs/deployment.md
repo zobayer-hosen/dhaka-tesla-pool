@@ -130,7 +130,7 @@ The schema changes **only** through TypeORM migrations (`synchronize: false`, DE
 
 | Script (`-w apps/api`) | What it does | Changes data? |
 |---|---|---|
-| `npm run migration:show` | Lists migrations: `[X]` applied, `[ ]` pending | No |
+| `npm run migration:show` | Lists migrations: `[X]` applied, `[ ]` pending | No data, but on a database that was never migrated it first creates TypeORM's empty `migrations` table. To look without writing anything, use the read-only session in §4.2 |
 | `npm run migration:run` | Applies pending migrations, all in one transaction | Yes |
 | `npm run migration:revert` | Undoes the last applied migration | Yes |
 | `npm run seed` | Adds the demo cast if missing (`ON CONFLICT DO NOTHING`, never overwrites) | Yes (inserts only) |
@@ -149,7 +149,7 @@ npm run seed -w apps/api
 ### 4.2 Neon `production`: only after these five checks
 
 1. **Target.** Project `tiny-truth-55799906`, branch `production`, database `neondb`, the **direct** host (no `-pooler`). `neon link` / `.neon` show the project and branch.
-2. **Migration files.** Read the SQL of every pending migration. `npm run migration:show` against local and against Neon shows exactly which ones would run. Don't assume Neon is empty: it may already have the schema and the cast.
+2. **Migration files.** Read the SQL of every pending migration. `npm run migration:show` against local, and the read-only check below against Neon, show exactly which ones would run. Checked on 2026-09-30: Neon `production` was empty (no tables), so `InitialSchema1790585110765` was the one pending migration. Don't assume it's still empty: check again right before migrating.
 3. **Restore point.** Create a branch from `production` first. It's instant, copy-on-write, and free-tier friendly; delete it once you're happy:
    `neon branches create --name pre-migration-YYYYMMDD --parent production`
 4. **Approval.** The product owner says go.
@@ -159,7 +159,11 @@ Windows PowerShell (the URL is typed at a hidden prompt, so it's not kept in she
 
 ```powershell
 $env:DATABASE_URL = Read-Host -MaskInput "Neon DIRECT url (no -pooler)"
-npm run migration:show -w apps/api    # read-only: what is applied / pending
+# Look first, in a read-only session: Postgres refuses any write, so nothing can change.
+$env:PGOPTIONS = "-c default_transaction_read_only=on"
+npm run migration:show -w apps/api    # [X] applied / [ ] pending. On a never-migrated database it stops with
+                                      # "cannot execute CREATE TABLE in a read-only transaction" = nothing applied yet
+Remove-Item Env:PGOPTIONS
 npm run migration:run -w apps/api     # only after the checks above
 npm run seed -w apps/api              # demo cast (safe to repeat)
 npm run migration:show -w apps/api    # every line should be [X]
@@ -170,7 +174,7 @@ Git Bash / macOS / Linux:
 
 ```bash
 read -rs -p "Neon DIRECT url: " DATABASE_URL && export DATABASE_URL && echo
-npm run migration:show -w apps/api
+PGOPTIONS="-c default_transaction_read_only=on" npm run migration:show -w apps/api   # look, read-only
 npm run migration:run -w apps/api
 npm run seed -w apps/api
 unset DATABASE_URL
