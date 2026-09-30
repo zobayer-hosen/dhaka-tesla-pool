@@ -253,7 +253,7 @@ Check: Nusrat `(4000 + 6000 − 1500) × 1 = 8500` ✓ · Rafiq and Shirin `(400
 | id | type | from → to | fare | actor | note |
 |---|---|---|---|---|---|
 | 1 | STATUS_CHANGED | — → REQUESTED | | Nusrat | |
-| 2 | STATUS_CHANGED | REQUESTED → MATCHED | | Jashim | Accepted, pool p-1 created |
+| 2 | STATUS_CHANGED | REQUESTED → MATCHED | | Jashim | Accepted by the driver, new pool created |
 | 5 | FARE_CHANGED | | 10000 → 8500 | *system* | Another passenger joined, pool discount applied |
 | 12 | STATUS_CHANGED | MATCHED → DRIVER_ARRIVED | | Jashim | |
 | 15 | STATUS_CHANGED | DRIVER_ARRIVED → STARTED | | Jashim | Fare locked |
