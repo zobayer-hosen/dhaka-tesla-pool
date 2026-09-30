@@ -332,6 +332,24 @@ describe('Driver (e2e)', () => {
     );
   });
 
+  it('says the driver has already arrived when he accepts someone after Arrived', async () => {
+    await goOnline();
+    const nusratRide = await requestRide(nusrat, { ...toMohakhali, seats: 1 });
+    const poolId = ((await accept(nusratRide.id).expect(200)).body as Trip).id;
+    await step(poolId, 'arrive').expect(200);
+
+    // Rafiq books from Banani after Jashim arrived: he waits, and can't be added.
+    const rafiqRide = await requestRide(rafiq, { ...toGulshan1, seats: 1 });
+    expect(rafiqRide.status).toBe('REQUESTED');
+    const response = await accept(rafiqRide.id).expect(409);
+    expect(response.body).toEqual({
+      statusCode: 409,
+      code: 'POOL_NOT_JOINABLE',
+      message:
+        'This request is from another pickup zone, or the driver has already arrived or the trip has started',
+    });
+  });
+
   it('never deadlocks when Rafiq cancels as Jashim taps Arrived (20 rounds)', async () => {
     await goOnline();
     const outcomes = { cancelWon: 0, arriveWon: 0 };
