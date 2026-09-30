@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/Button';
@@ -8,6 +9,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { Spinner } from '@/components/Spinner';
 import { api, errorMessage } from '@/lib/api';
+import { goOfflineBlocked } from '@/lib/driver-view';
 import { formatTaka } from '@/lib/money';
 import type { DriverStatus, Trip, WaitingRequest } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
@@ -18,6 +20,8 @@ export default function DriverDashboardPage() {
   const router = useRouter();
   const status = useApi<DriverStatus>('/driver/status');
   const requests = useApi<WaitingRequest[]>('/driver/requests', 5000);
+  // His current trip, if any (404 = none). While there is one, he can't go offline.
+  const trip = useApi<Trip>('/driver/pool', 5000);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -65,6 +69,7 @@ export default function DriverDashboardPage() {
   }
 
   const online = status.data.online;
+  const offlineBlocked = goOfflineBlocked(online, trip.data);
   return (
     <div className="space-y-4">
       <Card className="flex items-center justify-between">
@@ -77,10 +82,19 @@ export default function DriverDashboardPage() {
               ? 'Waiting requests you can accept appear below.'
               : 'Go online to see and accept requests.'}
           </p>
+          {offlineBlocked && (
+            <p className="text-sm text-amber-700">
+              You can go offline after your{' '}
+              <Link href="/driver/trip" className="underline">
+                current trip
+              </Link>{' '}
+              is completed.
+            </p>
+          )}
         </div>
         <Button
           variant={online ? 'secondary' : 'primary'}
-          disabled={busy}
+          disabled={busy || offlineBlocked}
           onClick={() => void setOnline(!online)}
         >
           {online ? 'Go offline' : 'Go online'}
