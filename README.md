@@ -57,7 +57,7 @@ Each browser session keeps its own login, so use separate sessions for the drive
 
 A privacy check that has no screen: Nusrat asking for Rafiq's ride id gets **`404`**, not `403`, so the API doesn't even admit that the ride exists (step 7 in [`docs/api/demo.http`](docs/api/demo.http)).
 
-The live database is shared, so if someone else is mid-demo, your numbers may differ. Locally, `docker compose down -v && docker compose up --build` gives a clean start.
+The live database is shared, so if someone else is mid-demo, your numbers may differ; [`demo:reset`](#reset-the-demo-data) clears old rides. Locally, `docker compose down -v && docker compose up --build` gives a clean start.
 
 ---
 
@@ -422,6 +422,22 @@ Remove-Item Env:DATABASE_URL          # back to .env (localhost)
 
 A `DATABASE_URL` set in the terminal wins over `.env`, so one command can target Neon without editing `.env`. To roll back, run `npm run migration:revert -w apps/api`, or restore `production` from the restore-point branch.
 
+### Reset the demo data
+
+Testing leaves rides behind on the shared live database, and they change what the next demo shows (for example, a rider who still has an active ride). `npm run demo:reset -w apps/api` empties it again:
+
+- it deletes every **ride event, ride request and pool**, in one transaction;
+- it keeps **users and vehicles** (the cast and Bullet) and sets **drivers offline**, so the demo starts again at "Jashim goes online";
+- it **refuses to run unless `DEMO_RESET=yes`** is set, and prints the target database and the row counts before and after.
+
+```powershell
+$env:DATABASE_URL = Read-Host -MaskInput "Neon DIRECT url (no -pooler)"   # not kept in shell history
+$env:DEMO_RESET = "yes"; npm run demo:reset -w apps/api; Remove-Item Env:DEMO_RESET
+Remove-Item Env:DATABASE_URL          # back to .env (localhost)
+```
+
+Locally, against the database in `.env`: `DEMO_RESET=yes npm run demo:reset -w apps/api`. A reset can't be undone except by restoring from Neon, so create a restore-point branch first on `production`, as for migrations.
+
 <details>
 <summary><b>Verify the live deployment, and common errors</b></summary>
 
@@ -519,7 +535,7 @@ dhaka-tesla-pool/
 │   │   │   ├── rides/        request, cancel, history, PoolingService (claimSeat), state machine
 │   │   │   ├── driver/       online/offline, accept, arrive → start → complete, history
 │   │   │   ├── fare/         pure fare math (paisa)
-│   │   │   ├── database/     entities, migrations, seed
+│   │   │   ├── database/     entities, migrations, seed, demo reset
 │   │   │   └── common/       error filter, request logger
 │   │   ├── test/             end-to-end tests (T1–T6) against Postgres
 │   │   └── Dockerfile
