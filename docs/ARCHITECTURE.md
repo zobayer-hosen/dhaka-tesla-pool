@@ -4,7 +4,7 @@
 
 **Stack:** Next.js (frontend) · NestJS (backend, REST API) · PostgreSQL (database) · TypeORM (ORM) · Docker Compose
 
-**Cast:** Jashim drives **Bullet** (3 seats). Nusrat, Rafiq and Shirin are passengers.
+**Cast:** Jashim drives **Bullet** (3 seats), Kamal drives **Toofan** (3 seats). Nusrat, Rafiq and Shirin are passengers.
 
 This file has five diagrams. Together they answer: *how the parts connect, what data we store, how a ride moves, and how we stop two people grabbing the same seat.*
 

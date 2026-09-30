@@ -14,10 +14,10 @@ A ride-pooling MVP. Strangers heading the same way share one small 3-seat car. E
 |---|---|
 | **What** | Passengers book rides, get pooled automatically with others from the same pickup zone, and each see only their own fare and status. One driver runs the trip. |
 | **Try it live** | https://dhaka-tesla-pool-web-five.vercel.app (free hosting: the first request after ~15 idle minutes takes 30–60 s) |
-| **Log in as** | `jashim@teslapool.dev` (driver) · `nusrat@teslapool.dev`, `rafiq@teslapool.dev`, `shirin@teslapool.dev` (passengers). Password for all: `password123` |
+| **Log in as** | `jashim@teslapool.dev` (driver of Bullet) · `kamal@teslapool.dev` (driver of Toofan) · `nusrat@teslapool.dev`, `rafiq@teslapool.dev`, `shirin@teslapool.dev` (passengers). Password for all: `password123` (demo only) |
 | **Stack** | Next.js 16 · NestJS 11 (REST) · PostgreSQL · TypeORM · Docker Compose · TypeScript everywhere |
 | **Hardest problem** | Two people booking the last seat at the same instant. Solved with **one atomic SQL `UPDATE`** plus a `CHECK` constraint, and proved by a 20-round race test ([details](#1-the-last-seat-concurrency)) |
-| **Tests** | **73 passing**: 34 unit + 39 end-to-end against a real Postgres, covering the six required scenarios T1–T6 ([details](#testing)) |
+| **Tests** | **91 passing**: 79 API tests (36 unit + 43 end-to-end against a real Postgres) + 12 web tests, covering the six required scenarios T1–T6 ([details](#testing)) |
 | **Run locally** | `cp .env.example .env && docker compose up --build` → http://localhost:3000 |
 | **Hosting** | Vercel (web) + Render (API) + Neon (Postgres), all free tiers ([details](#deployment)) |
 
@@ -54,6 +54,8 @@ Each browser session keeps its own login, so use separate sessions for the drive
 | 5 | Shirin | Book Banani → Gulshan 1, **2 seats** | Only 1 seat is left, so she **waits** (the edge case) |
 | 6 | Shirin | **Cancel ride**, then book again with 1 seat | She joins: **3 / 3 seats**, the pool is full |
 | 7 | Jashim | **Arrived** → **Start trip** → **Complete trip** | Every passenger sees each step, then "Completed" and the ride in their history |
+
+**A second driver:** log in as **Kamal** (he drives **Toofan**, also 3 seats) and go online. While Bullet is full, a new Banani passenger waits as "Waiting". Jashim isn't offered them, but Kamal is, and accepting starts a new trip in Toofan.
 
 A privacy check that has no screen: Nusrat asking for Rafiq's ride id gets **`404`**, not `403`, so the API doesn't even admit that the ride exists (step 7 in [`docs/api/demo.http`](docs/api/demo.http)).
 
@@ -232,11 +234,12 @@ Tests target the risky behaviour, not a coverage number. The same cast (Jashim, 
 | T5 | Cancel works before arrival and frees the seats; after arrival it's refused | [`rides.e2e-spec.ts#L210`](apps/api/test/rides.e2e-spec.ts#L210), [`driver.e2e-spec.ts#L322`](apps/api/test/driver.e2e-spec.ts#L322) |
 | T6 | Nusrat and Shirin grab the last seat at once: both get `201`, exactly one is `MATCHED`, `seats_taken = 3` (20 rounds) | [`concurrency.e2e-spec.ts#L42`](apps/api/test/concurrency.e2e-spec.ts#L42) |
 
-**Results:** 73 tests pass (34 unit tests in 6 suites + 39 end-to-end tests in 5 suites). The end-to-end tests call the real HTTP API and use a real Postgres database. It's a separate database whose name must end in `_test`, so tests can never wipe your data.
+**Results:** 91 tests pass: API 79 (36 unit tests in 7 suites + 43 end-to-end tests in 7 suites) and web 12 (2 suites, the page rules such as "Not shared yet"). The end-to-end tests call the real HTTP API and use a real Postgres database. It's a separate database whose name must end in `_test`, so tests can never wipe your data.
 
 ```bash
 docker compose up -d db          # the tests need the database
 npm test -w apps/api             # unit + end-to-end (T1–T6)
+npm test -w apps/web             # page rules (no browser needed)
 npm run lint                     # ESLint (type-aware) + Prettier
 ```
 
@@ -508,7 +511,7 @@ All 39 decisions, each with its reason, are in [docs/DECISIONS.md](docs/DECISION
 - The whole pool completes at once; there's no per-passenger drop-off.
 - Status updates arrive by polling (up to 5 s late).
 - The JWT is stored in `localStorage`: an XSS bug could read it. Production should use an httpOnly cookie.
-- One seeded driver and vehicle; there's no driver sign-up.
+- Drivers are seeded (Jashim with Bullet, Kamal with Toofan); there's no driver sign-up (PRD A3).
 - There's no ride-detail screen; the timeline is available at `GET /rides/:id`.
 - Free hosting: the API sleeps after ~15 idle minutes (the next request takes 30–60 s), and only the production Vercel domain is allowed by CORS, not preview URLs.
 - CI builds the Docker image and a web preview; lint and tests run locally, not in CI yet.

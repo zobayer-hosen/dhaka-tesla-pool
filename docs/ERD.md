@@ -230,6 +230,7 @@ What the database holds at **8:47 AM**, after Rafiq and Shirin joined and Jashim
 | id | driver_id | nickname | capacity |
 |---|---|---|---|
 | `v-bullet` | `u-jashim` | Bullet | 3 |
+| `v-toofan` | `u-kamal` | Toofan | 3 |
 
 **`pools`**
 
