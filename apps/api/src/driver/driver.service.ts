@@ -150,7 +150,7 @@ export class DriverService {
           ) {
             throw conflict(
               'POOL_NOT_JOINABLE',
-              'This request is from another pickup zone, or your trip has already started',
+              'This request is from another pickup zone, or the driver has already arrived or the trip has started',
             );
           }
           id = pool.id;
