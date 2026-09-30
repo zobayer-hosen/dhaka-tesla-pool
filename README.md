@@ -101,7 +101,6 @@ dhaka-tesla-pool/
 ├── docs/                     PRD, ARCHITECTURE, ERD, DECISIONS, SCALING, AI_LOG, deployment, api/demo.http
 ├── docker-compose.yml
 ├── render.yaml               Render blueprint for the API (docs/deployment.md)
-├── neon.ts                   Neon CLI policy: Neon Postgres only
 └── .env.example
 ```
 
@@ -195,10 +194,14 @@ Demo-only passwords, seeded automatically.
 
 **Hosted on free tiers:** web on **Vercel** (`apps/web`), API on **Render** (`apps/api`, [`render.yaml`](render.yaml)), database on **Neon** Postgres (project `tiny-truth-55799906`, branch `production`). The full, step-by-step guide covers settings, environment variables, the Neon CLI, safe production migrations, verification and common errors: **[docs/deployment.md](docs/deployment.md)**.
 
-- Web: <!-- WEB URL: filled in after the first deploy -->
-- API: <!-- API URL: filled in after the first deploy --> (health: `/api/v1/health`)
+- Web: https://dhaka-tesla-pool-web-five.vercel.app
+- API: https://dhaka-tesla-pool-7d8l.onrender.com/api/v1 (health: [`/api/v1/health`](https://dhaka-tesla-pool-7d8l.onrender.com/api/v1/health))
 
-In production the API only starts. Migrations and the seed are a separate, manual step against the direct Neon URL, never run on every start (DECISIONS #35). Free services sleep when idle: the first request after ~15 minutes takes about a minute.
+Deployment notes:
+
+- **Cold start:** the free Render API sleeps after ~15 idle minutes. The next request takes about 30–60 s, then it's fast again.
+- **Database URLs:** the API uses Neon's **pooled** URL (host contains `-pooler`). Migrations and the seed use the **direct** URL.
+- **Migrations:** run by hand, never on API start (DECISIONS #35). `production` was migrated and seeded on 2026-09-30, after a restore-point branch `pre-migration-20260930`.
 
 **The reproducible fallback is Docker:** `cp .env.example .env && docker compose up --build` starts the whole system (db, api with migrations and seed, web) with health checks on any machine with Docker. Checked before release on a fresh clone of `pre-release`: 3 containers healthy, every page answers, and the PRD §14 demo passed through the API (Nusrat 10000 → 8500, Shirin rebooks to 3/3, 404 on Rafiq's ride, all three riders COMPLETED, total 28500 paisa).
 
