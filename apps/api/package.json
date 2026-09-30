@@ -16,6 +16,7 @@
     "seed": "npm run build && node dist/database/seed.js",
     "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
     "seed:prod": "node dist/database/seed.js",
+    "demo:reset": "npm run build && node dist/database/demo-reset.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch --runInBand",
     "test:cov": "jest --coverage --runInBand",
